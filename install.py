@@ -315,6 +315,13 @@ def activate(release, python):
     return previous
 
 
+def mail(python, release):
+    """The relay as the settings say: deployed when absent, refreshed when running, removed when mail is off."""
+    try: say("Mail: " + run(python, "-m", "reeve.setup", "mail", cwd=release))
+    except subprocess.CalledProcessError as exc:
+        say("Mail relay setup did not complete; the panel runs without it. Run: sudo reeve mail setup")
+
+
 def record(release, commit, version, modified, previous, source_url):
     wrapper = Path("/usr/local/bin/reeve")
     wrapper.write_text('#!/bin/sh\ncd /opt/reeve/current\nexec .venv/bin/python -m reeve.cli "$@"\n')
@@ -326,6 +333,8 @@ def record(release, commit, version, modified, previous, source_url):
              "source": source_url, "installed_at": time.time(),
              "database_schema": {"web": 1, "worker_supported": json.loads((release / "config/capabilities.json").read_text())["worker_schemas"]}}
     temp = RECORD.with_suffix(".new"); temp.write_text(json.dumps(entry, indent=2) + "\n"); temp.replace(RECORD)
+    check = Path("/srv/ops/panel/worker/update-check.json")
+    if check.exists(): check.unlink()  # the worker checks again within a minute against the new version
     return entry
 
 
@@ -367,6 +376,7 @@ def main():
     python = foundation(release)
     previous = activate(release, python)
     entry = record(release, commit, version, modified, previous, source_url)
+    mail(python, release)
     first_password(python, release)
     say(json.dumps({k: entry[k] for k in ("version", "current", "previous", "modified")}))
 

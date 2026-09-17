@@ -82,6 +82,14 @@ def state():
         return None
 
 
+def status():
+    """What the pages show: the installed release and the last check, with availability judged against what runs now."""
+    here = installed(); last = state() or {}
+    latest = last.get('latest'); mine = parse(here.get('version'))
+    return {**here, 'latest': latest, 'checked_at': last.get('checked_at'), 'error': last.get('error', ''),
+            'available': bool(latest and (mine is None or parse(latest) > mine))}
+
+
 def apply(version=None, log=None):
     """Fetch the release into the panel's own clone and run its installer. Root only; the installer restarts the services."""
     log = log or (lambda text: print(text, flush=True))

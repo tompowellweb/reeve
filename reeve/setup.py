@@ -26,6 +26,14 @@ def main():
         from .edge_setup import setup
         setup()
         print(json.dumps({'edge': 'installed'}))
+    elif step == 'mail':
+        # Mail defaults to on: the relay is deployed on a fresh machine and refreshed, not restarted, on a reinstall.
+        from .core import Ledger
+        from .host import Host
+        from .mail import php_sites, refresh, install_shim
+        ledger = Ledger('/srv/ops/panel/worker/jobs.sqlite3'); host = Host()
+        install_shim()
+        print(json.dumps(refresh(host, php_sites(ledger))))
     elif step == 'list':
         from .worker import rpc
         print(json.dumps({'sites': len(rpc({'op': 'list'}))}))

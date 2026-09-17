@@ -49,6 +49,16 @@ def test_check_compares_the_newest_tag_with_the_installed_version_and_is_daily(b
     assert state['latest'] is None and state['available'] is False and 'no route' in state['error']
 
 
+def test_status_judges_availability_against_what_runs_now(box):
+    ops, calls = box
+    (ops / 'panel/release.json').write_text(json.dumps({'schema': 2, 'version': '1.1.1', 'current': 'abc'}))
+    up.check(now=1000.0)
+    assert up.status()['available'] is True and up.status()['latest'] == '1.10.0'
+    (ops / 'panel/release.json').write_text(json.dumps({'schema': 2, 'version': '1.10.0', 'current': 'def', 'previous_version': '1.1.1'}))
+    result = up.status()  # updated since the check: the stale check must not say "available"
+    assert result['available'] is False and result['version'] == '1.10.0' and result['previous_version'] == '1.1.1' and result['checked_at'] == 1000.0
+
+
 def test_apply_fetches_the_tag_and_runs_the_installer(box, monkeypatch, tmp_path):
     ops, calls = box
     monkeypatch.setattr(up, 'SRC', tmp_path / 'src')
