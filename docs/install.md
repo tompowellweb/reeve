@@ -14,14 +14,14 @@ installation must use rootful overlay2 with its data under `/srv/docker`.
 
 ## Install Reeve
 
-The example below installs release `v1.1.4`. Replace `/dev/vdb` with the empty data device
+The example below installs release `v1.1.5`. Replace `/dev/vdb` with the empty data device
 you intend to use: **the installer will format it**.
 
 ```sh
 sudo apt-get install -y git
 git clone https://github.com/tompowellweb/reeve.git
 cd reeve
-git checkout v1.1.4
+git checkout v1.1.5
 sudo python3 install.py --data-device /dev/vdb
 ```
 

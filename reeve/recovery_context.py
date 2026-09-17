@@ -55,6 +55,8 @@ def summary(backup):
     if backup.get('error'):
         return {'title': 'Backup status unavailable', 'detail': 'The last backup state could not be checked. Complete site recovery has not been verified.'}
     site = backup.get('site') or {}
+    if site.get('available') and remote.get('last_site_copy'):
+        return {'title': 'Backed up and copied off', 'detail': 'A complete site backup exists and its latest copy is verified on the destination. Its restore has not been tested.'}
     if site.get('available'):
         return {'title': 'Backed up locally', 'detail': 'A complete local site backup exists. It has not been copied off this machine and its restore has not been tested.'}
     if local or copied:

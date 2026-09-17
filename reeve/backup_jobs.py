@@ -243,4 +243,5 @@ def status(ledger, row):
             'last_success': successful, 'artifact': artifact,
             'available': available, 'policy': policy(), 'stored_bytes': usage(),
             'scope': scope, 'site': site,
-            'remote': remote_status(ledger, row['id']), 'local_full': 'available' if site['available'] else 'not configured', 'remote_full': 'not configured'}
+            'remote': remote_status(ledger, row['id']), 'local_full': 'available' if site['available'] else 'not configured',
+            'remote_full': 'copied' if (remote_status(ledger, row['id']).get('last_site_copy')) else 'not configured'}

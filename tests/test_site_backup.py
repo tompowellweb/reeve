@@ -84,6 +84,7 @@ def test_capture_takes_fresh_dump_files_and_non_database_volumes(context):
     assert status['available'] and status['manifest']['coverage'] == 'complete' and status['manifest']['volumes'] == {'db_data': 'logical dump', 'files': 'raw copy (not quiesced)'}
     from reeve.recovery_context import summary
     assert summary({'site': status, 'remote': {}})['title'] == 'Backed up locally'
+    assert summary({'site': status, 'remote': {'last_site_copy': {'verified': 5.0}}})['title'] == 'Backed up and copied off'
     assert sb.completed(job)['operation'] == job['id']
 
 
