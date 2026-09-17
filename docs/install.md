@@ -7,29 +7,57 @@ This guide installs Reeve on a Debian 13 server and opens the panel through SSH.
 - A minimal Debian 13 amd64 installation, with at least 2 GB of RAM.
 - An administrator account with SSH key access and sudo.
 - Access to Debian and Docker package repositories and container registries.
-- An empty disk or partition for data, or an existing XFS filesystem mounted at `/srv`.
+- Somewhere for the data: a separate partition or volume is best; a single-disk server works
+  too. See [Where the data lives](#where-the-data-lives).
 
 The installer sets up Docker, XFS project quotas and the panel services. An existing Docker
 installation must use rootful overlay2 with its data under `/srv/docker`.
 
 ## Install Reeve
 
-The example below installs release `v1.1.7`. Replace `/dev/vdb` with the empty data device
-you intend to use: **the installer will format it**.
+The example below installs release `v1.1.8`. Replace `/dev/vdb` with the empty data device
+you intend to use: **the installer will format it**. On a single-disk server leave the option
+out and accept the data image the installer offers.
 
 ```sh
 sudo apt-get install -y git
 git clone https://github.com/tompowellweb/reeve.git
 cd reeve
-git checkout v1.1.7
+git checkout v1.1.8
 sudo python3 install.py --data-device /dev/vdb
 ```
 
-If `/srv` is already mounted, omit `--data-device`. The installer adopts XFS and enables
-project quotas if needed; follow any reboot instruction. For an empty non-XFS `/srv`, it
-asks before formatting. It refuses devices with existing signatures and does not partition disks.
-
 Keep the operator password printed at the end of installation.
+
+## Where the data lives
+
+Reeve keeps sites, databases, Docker and local backups under `/srv` on an XFS filesystem with
+project quotas, which is how each site gets a hard disk limit. Three ways to provide it, best
+first:
+
+1. **A separate partition or volume.** When installing Debian, give the root 15–20 GB and leave
+   the rest for a second partition; or attach a block storage volume from your provider. Pass it
+   to the installer with `--data-device`. It is formatted only if it is empty.
+2. **An image file on the root filesystem**, for a VPS with one disk and no volume. When nothing
+   separate is mounted at `/srv`, the installer offers to create `/var/lib/reeve/srv.img` as XFS
+   and mount it there. It takes 80% of the root's free space by default and always leaves the
+   system at least 10 GB; `--data-percent 60` changes the share and `--data-image` says yes
+   without a terminal. The cost is one extra filesystem layer and a little throughput. To grow it
+   later:
+
+   ```sh
+   sudo truncate -s +20G /var/lib/reeve/srv.img
+   sudo losetup -c "$(findmnt -no SOURCE /srv)"
+   sudo xfs_growfs /srv
+   ```
+
+   Keep the root filesystem from filling up under the image; the home page warns below 10 GB.
+3. **An XFS filesystem you mounted at `/srv` yourself.** It is adopted, and the `prjquota`
+   option is added if missing; follow any reboot instruction. An empty non-XFS `/srv` is
+   formatted after you say yes.
+
+The installer refuses devices with existing signatures and does not partition disks. Shrinking
+a full-disk root needs the provider's rescue system and `resize2fs` offline; it does not do that.
 
 ## Sign in
 

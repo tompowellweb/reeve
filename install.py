@@ -156,7 +156,7 @@ def data_image(percent, assume_yes):
     question = (f"Nothing separate is mounted at /srv. Create a {size / 1024 ** 3:.0f} GB data image ({percent}% of the root's "
                 f"{free / 1024 ** 3:.0f} GB free, keeping {ROOT_RESERVE // 1024 ** 3} GB for the system) at {IMAGE}? "
                 "A separate partition or volume is better when you have one (--data-device).")
-    if not confirm(question, assume_yes):
+    if not confirm(question, assume_yes, "--data-image"):
         raise SystemExit("Not created. Mount an XFS filesystem at /srv, or pass --data-device, or --data-image to accept.")
     IMAGE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     say(f"Creating {IMAGE} ({size / 1024 ** 3:.0f} GB, sparse) as XFS with project quotas")
@@ -169,9 +169,9 @@ def data_image(percent, assume_yes):
     run("mount", "/srv")
 
 
-def confirm(question, assume_yes):
+def confirm(question, assume_yes, flag="--format-data"):
     if assume_yes: return True
-    if not sys.stdin.isatty(): raise SystemExit(question + " Pass --format-data to say yes without a terminal.")
+    if not sys.stdin.isatty(): raise SystemExit(question + f" Pass {flag} to say yes without a terminal.")
     return input(question + " [yes/no] ").strip().lower() in ("y", "yes")
 
 
