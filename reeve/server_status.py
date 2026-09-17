@@ -190,7 +190,8 @@ def summary(ledger, host, now=None):
         rows = ledger.list()
         site_projects = {row['project'] for row in rows}
         backups_used = int(command(['du', '-sb', str(BACKUPS)]).split()[0]) if BACKUPS.exists() else 0
-        return {'srv': filesystem(OPS.parent), 'root': filesystem('/'), 'sites_used': sum(q['used'] for p, q in projects.items() if p in site_projects),
+        source = command(['findmnt', '-no', 'SOURCE', str(OPS.parent)]).strip()
+        return {'srv': filesystem(OPS.parent), 'root': filesystem('/'), 'image': source.startswith('/dev/loop') or source.endswith('.img'), 'sites_used': sum(q['used'] for p, q in projects.items() if p in site_projects),
                 'backups_used': backups_used, 'docker': docker_disk()}
     part('disk', disk)
     listing = []

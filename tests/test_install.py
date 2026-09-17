@@ -16,7 +16,7 @@ def test_the_data_filesystem_decision_adopts_amends_formats_or_advises():
     assert installer.plan_data({'fstype': 'ext4', 'options': 'rw', 'source': '/dev/vdb'}, None, empty=True) == 'format-mounted'
     assert installer.plan_data(None, '/dev/vdb') == 'format'
     with pytest.raises(SystemExit, match='holds data'): installer.plan_data({'fstype': 'ext4', 'options': 'rw', 'source': '/dev/vdb'}, None, empty=False)
-    with pytest.raises(SystemExit, match='--data-device'): installer.plan_data(None, None)
+    assert installer.plan_data(None, None) == 'image'  # nothing separate: the image file is offered
 
 
 def test_fstab_is_amended_in_place_or_extended():
@@ -80,3 +80,12 @@ def test_a_modified_release_carries_the_working_trees_files(tmp_path, monkeypatc
     assert (release / '.installed').read_text().startswith('1.0.0 ' + 'a' * 40 + ' modified')
     clean = installer.install_release(source, 'b' * 40, '1.0.0', False, buffer.getvalue(), [])
     assert clean.name == 'b' * 40 and (clean / 'reeve/__init__.py').read_text() == 'old text'
+
+
+def test_the_image_takes_the_chosen_share_but_leaves_the_root_its_reserve():
+    gib = 1024 ** 3
+    assert installer.image_size(100 * gib, 80) == 80 * gib
+    assert installer.image_size(30 * gib, 80) == 20 * gib  # 80% would leave 6 GB; the reserve wins
+    assert installer.image_size(50 * gib, 30) == 15 * gib
+    with pytest.raises(SystemExit, match='Free space, attach a volume'): installer.image_size(15 * gib, 80)
+    assert installer.amend_fstab('UUID=root / ext4 errors=remount-ro 0 1\n', '/srv', '/var/lib/reeve/srv.img', 'xfs', 'loop,prjquota').splitlines()[-1] == '/var/lib/reeve/srv.img /srv xfs loop,prjquota 0 0'

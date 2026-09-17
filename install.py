@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Install or update Reeve on this Debian 13 machine from this checkout.
 
-    sudo python3 install.py [--data-device /dev/vdb] [--commit HASH] [--allow-modified]
+    sudo python3 install.py [--data-device /dev/vdb | --data-image [--data-percent 80]] [--commit HASH] [--allow-modified]
 
 The installer adopts what exists and builds what is missing:
 
@@ -9,8 +9,9 @@ The installer adopts what exists and builds what is missing:
   gets prjquota added to its mount options and is remounted (or asks for a reboot when busy). An
   empty non-XFS /srv is formatted as XFS with the operator's yes (--format-data without a
   terminal). Without a mount, --data-device names an empty disk or partition that is formatted,
-  added to fstab and mounted. Anything carrying a signature is refused; the installer never
-  partitions.
+  added to fstab and mounted; without that either, an XFS image file on the root filesystem
+  is offered (--data-image accepts it, --data-percent sizes it, the root keeps 10 GB).
+  Anything carrying a signature is refused; the installer never partitions.
 - Rootful Docker with overlay2 under /srv/docker is adopted. Without Docker, it is installed with
   the daemon and containerd settings, the quota projects and the journal cap.
 - The checked-out tree becomes a release under /opt/reeve/releases/<commit>, its tag (or version
@@ -69,8 +70,7 @@ def plan_data(mount, device, empty=False):
                          "and it holds data. Move the data away and run the installer again (it will offer to format it), "
                          "or mount an XFS filesystem at /srv, or pass --data-device with an empty disk or partition.")
     if not device:
-        raise SystemExit("Nothing is mounted at /srv. Either mount an XFS filesystem there, or pass --data-device with an empty "
-                         "disk or partition for the installer to format (carve one from free space with fdisk first).")
+        return "image"
     return "format"
 
 
@@ -131,6 +131,44 @@ def format_device(device):
     run("mount", "/srv")
 
 
+IMAGE = Path("/var/lib/reeve/srv.img")
+ROOT_RESERVE = 10 * 1024 ** 3   # the root filesystem keeps at least this much free beside the image
+IMAGE_MINIMUM = 8 * 1024 ** 3   # below this the data space is not worth having
+
+
+def image_size(free, percent):
+    """Pure: the image file's size from the root's free space and the chosen share, keeping the reserve."""
+    size = min(free * percent // 100, free - ROOT_RESERVE)
+    if size < IMAGE_MINIMUM:
+        raise SystemExit(f"Only {free / 1024 ** 3:.1f} GB is free on the root filesystem; an image would leave less than "
+                         f"{ROOT_RESERVE // 1024 ** 3} GB to the system or be under {IMAGE_MINIMUM // 1024 ** 3} GB. "
+                         "Free space, attach a volume, or pass --data-device.")
+    return size // (1024 ** 2) * (1024 ** 2)
+
+
+def data_image(percent, assume_yes):
+    """No separate filesystem: an XFS image file on the root filesystem, mounted at /srv through a loop device."""
+    if IMAGE.exists():
+        raise SystemExit(f"{IMAGE} exists but is not mounted at /srv; mount it (its fstab entry may be missing) or move it away")
+    info = os.statvfs(IMAGE.parent.parent if IMAGE.parent.exists() else "/var")
+    free = info.f_bavail * info.f_frsize
+    size = image_size(free, percent)
+    question = (f"Nothing separate is mounted at /srv. Create a {size / 1024 ** 3:.0f} GB data image ({percent}% of the root's "
+                f"{free / 1024 ** 3:.0f} GB free, keeping {ROOT_RESERVE // 1024 ** 3} GB for the system) at {IMAGE}? "
+                "A separate partition or volume is better when you have one (--data-device).")
+    if not confirm(question, assume_yes):
+        raise SystemExit("Not created. Mount an XFS filesystem at /srv, or pass --data-device, or --data-image to accept.")
+    IMAGE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    say(f"Creating {IMAGE} ({size / 1024 ** 3:.0f} GB, sparse) as XFS with project quotas")
+    run("truncate", "-s", str(size), str(IMAGE)); os.chmod(IMAGE, 0o600)
+    run("mkfs.xfs", "-q", "-L", "reeve-srv", str(IMAGE))
+    fstab = Path("/etc/fstab")
+    fstab.write_text(amend_fstab(fstab.read_text(), "/srv", str(IMAGE), "xfs", "loop,prjquota"))
+    run("systemctl", "daemon-reload")
+    Path("/srv").mkdir(mode=0o755, exist_ok=True)
+    run("mount", "/srv")
+
+
 def confirm(question, assume_yes):
     if assume_yes: return True
     if not sys.stdin.isatty(): raise SystemExit(question + " Pass --format-data to say yes without a terminal.")
@@ -149,7 +187,7 @@ def format_mounted(mount, assume_yes):
     run("mount", "/srv")
 
 
-def data_filesystem(device, assume_yes=False):
+def data_filesystem(device, assume_yes=False, image=False, percent=80):
     mount = mounted("/srv")
     empty = not any(Path("/srv").iterdir()) if mount else False
     if mount and mount.get("fstype") != "xfs" and not empty:
@@ -157,6 +195,7 @@ def data_filesystem(device, assume_yes=False):
         empty = [p.name for p in Path("/srv").iterdir()] == ["lost+found"]
     plan = plan_data(mount, device, empty)
     if plan == "format": format_device(device)
+    elif plan == "image": data_image(percent, assume_yes or image)
     elif plan == "format-mounted": format_mounted(mount, assume_yes)
     elif plan == "amend":
         say(f"/srv is XFS on {mount['source']} without project quotas: adding prjquota to its mount options")
@@ -416,6 +455,8 @@ def main():
     parser = argparse.ArgumentParser(description="Install or update Reeve from this checkout.")
     parser.add_argument("--data-device", help="an empty disk or partition to format as the XFS data filesystem when /srv is not mounted")
     parser.add_argument("--format-data", action="store_true", help="say yes to formatting an empty non-XFS filesystem mounted at /srv")
+    parser.add_argument("--data-image", action="store_true", help="say yes to a data image file on the root filesystem when nothing separate exists")
+    parser.add_argument("--data-percent", type=int, default=80, help="the share of the root's free space the image may take (default 80)")
     parser.add_argument("--commit", help="install this commit from the history instead of the checked-out tree")
     parser.add_argument("--allow-modified", action="store_true", help="install the working tree even with uncommitted changes, as a modified release")
     args = parser.parse_args()
@@ -434,7 +475,8 @@ def main():
     if missing:
         say("Installing packages: " + " ".join(missing))
         run("apt-get", "update", "-qq"); run("apt-get", "install", "-y", "-qq", "--no-install-recommends", *missing)
-    data_filesystem(args.data_device, args.format_data)
+    if not 10 <= args.data_percent <= 95: raise SystemExit("--data-percent takes 10 to 95")
+    data_filesystem(args.data_device, args.format_data, args.data_image, args.data_percent)
     docker_engine()
     daemon_setting("userland-proxy", False)
     commit, version, modified, archive, changed = tree(source, args.commit, args.allow_modified)

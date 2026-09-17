@@ -53,6 +53,7 @@ def box(tmp_path, monkeypatch):
         if args[0] == 'xfs_quota': return (f"Project quota on /srv (/dev/vdb)\n#0 40000000 0 0 00 [------]\n#{php['project']} 204800 0 524288 00 [------]\n"
                                            f"#{package['project']} 1024 0 1048576 00 [------]\n#999 512 0 1024 00 [------]\n")
         if args[0] == 'du': return '41000000000\t' + args[2] + '\n'
+        if args[0] == 'findmnt': return '/dev/vdb\n'
         raise AssertionError(args)
     monkeypatch.setattr(ss, 'command', fake_command)
     monkeypatch.setattr(ss, 'filesystem', lambda path: {'total': 200 * 1024 ** 3, 'free': 138 * 1024 ** 3} if str(path) == str(ops.parent) else {'total': 37 * 1024 ** 3, 'free': 24 * 1024 ** 3})
@@ -69,7 +70,7 @@ def test_summary_gathers_the_box_and_every_site_and_the_second_sample_gives_cpu(
     assert first['cpu'] == {'cores': os.cpu_count() or 1, 'load': first['cpu']['load'], 'pressure': 8.77} and len(first['cpu']['load']) == 3
     assert first['memory']['total'] == 16314408 * 1024 and first['memory']['used'] == (16314408 - 10588932) * 1024 and first['memory']['swap_used'] == (2169852 - 2168816) * 1024 and first['memory']['pressure'] == 0.5
     disk = first['disk']
-    assert disk['srv']['free'] == 138 * 1024 ** 3 and disk['root']['free'] == 24 * 1024 ** 3 and disk['backups_used'] == 41_000_000_000
+    assert disk['srv']['free'] == 138 * 1024 ** 3 and disk['root']['free'] == 24 * 1024 ** 3 and disk['backups_used'] == 41_000_000_000 and disk['image'] is False
     assert disk['sites_used'] == (204800 + 1024) * 1024  # project 0 and the stray project 999 are not sites
     assert disk['docker']['images'] == {'size': 8_128_000_000, 'reclaimable': 1_225_000_000} and disk['docker']['build_cache']['reclaimable'] == 6_089_000_000
     sites = {s['name']: s for s in first['sites']}
