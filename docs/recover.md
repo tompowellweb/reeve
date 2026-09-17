@@ -25,8 +25,8 @@ Nothing else: not the old server's ledger, disk or keys.
 
    ```sh
    sudo apt-get install -y git
-   git clone https://github.com/tompowellweb/reeve.git && cd reeve && git checkout v1.1.1
-   sudo ./install.py --data-device /dev/vdb
+   git clone https://github.com/tompowellweb/reeve.git && cd reeve && git checkout v1.1.2
+   sudo python3 install.py --data-device /dev/vdb
    ```
 
    The installer formats the empty data disk, installs Docker and the release, and prints the

@@ -21,7 +21,7 @@ named disposable fixtures. They are tooling, not the suite.
 1. Commit and push; tag a release as `vX.Y.Z` when it is one. The installer installs what is
    checked out and records the tag, or the version plus commit between tags; a dirty tree needs
    `--allow-modified` and shows as modified.
-2. On a server: `git pull --ff-only` in the clone, then `sudo ./install.py`; or `sudo reeve
+2. On a server: `git pull --ff-only` in the clone, then `sudo python3 install.py`; or `sudo reeve
    update` once the release is tagged and pushed, which does the same from the panel's own clone.
 3. The installer refuses a release whose worker cannot read the current ledger schema and keeps
    the previous release under `/opt/reeve/releases/` for rollback: `sudo reeve update --to

@@ -19,16 +19,16 @@ From the repository (a Debian cloud image has no git; the first line adds it):
 
 ```sh
 sudo apt-get install -y git
-git clone https://github.com/tompowellweb/reeve.git && cd reeve && git checkout v1.1.1
-sudo ./install.py --data-device /dev/vdb
+git clone https://github.com/tompowellweb/reeve.git && cd reeve && git checkout v1.1.2
+sudo python3 install.py --data-device /dev/vdb
 ```
 
 Or from a release tarball, with nothing but curl:
 
 ```sh
-curl -fsSL https://github.com/tompowellweb/reeve/archive/refs/tags/v1.1.1.tar.gz | tar xz
-cd reeve-1.1.1
-sudo ./install.py --data-device /dev/vdb
+curl -fsSL https://github.com/tompowellweb/reeve/archive/refs/tags/v1.1.2.tar.gz | tar xz
+cd reeve-1.1.2
+sudo python3 install.py --data-device /dev/vdb
 ```
 
 Leave out `--data-device` when `/srv` is already mounted as XFS with project quotas: the

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Install or update Reeve on this Debian 13 machine from this checkout.
 
-    sudo ./install.py [--data-device /dev/vdb] [--commit HASH] [--allow-modified]
+    sudo python3 install.py [--data-device /dev/vdb] [--commit HASH] [--allow-modified]
 
 The installer adopts what exists and builds what is missing:
 
@@ -344,7 +344,7 @@ def main():
     parser.add_argument("--allow-modified", action="store_true", help="install the working tree even with uncommitted changes, as a modified release")
     args = parser.parse_args()
     if os.getuid() != 0:
-        raise SystemExit("Run as root: sudo ./install.py")
+        raise SystemExit("Run as root: sudo python3 install.py")
     if args.commit and not re.fullmatch("[0-9a-f]{40}", args.commit):
         raise SystemExit("--commit takes a full 40-character commit")
     os.umask(0o022)
