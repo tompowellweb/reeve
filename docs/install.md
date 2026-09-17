@@ -15,9 +15,19 @@ already has an XFS data filesystem and Docker. The same steps begin [recovery](r
 
 ## Install
 
+From the repository (a Debian cloud image has no git; the first line adds it):
+
 ```sh
-git clone https://github.com/tompowellweb/reeve.git
-cd reeve
+sudo apt-get install -y git
+git clone https://github.com/tompowellweb/reeve.git && cd reeve && git checkout v1.1.1
+sudo ./install.py --data-device /dev/vdb
+```
+
+Or from a release tarball, with nothing but curl:
+
+```sh
+curl -fsSL https://github.com/tompowellweb/reeve/archive/refs/tags/v1.1.1.tar.gz | tar xz
+cd reeve-1.1.1
 sudo ./install.py --data-device /dev/vdb
 ```
 
@@ -30,8 +40,9 @@ local backup folder and the systemd units; initialises the PHP and database cata
 the Caddy edge; starts the services; and prints the operator password once. About two minutes
 on a cloud image, most of it Docker's packages.
 
-The installer installs what is checked out and records its tag. Uncommitted changes are
-refused unless `--allow-modified`, which marks the release modified in the footer.
+The installer installs what is checked out and records its tag, or the tarball's version.
+Uncommitted changes in a clone are refused unless `--allow-modified`, which marks the release
+modified in the footer. Updates need git, which the installer adds to the machine.
 
 ## First access
 

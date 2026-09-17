@@ -40,6 +40,18 @@ def test_the_tree_is_the_commit_with_its_tag_or_version_and_refuses_uncommitted_
     assert installer.tree(tmp_path, second, False)[1] == '1.4.0+' + second[:7]
 
 
+def test_a_tree_without_git_installs_as_the_project_version(tmp_path):
+    source = tmp_path / 'reeve-1.4.0'; (source / 'reeve').mkdir(parents=True)
+    (source / 'pyproject.toml').write_text('[project]\nname = "reeve-panel"\nversion = "1.4.0"\n')
+    (source / 'reeve/__init__.py').write_text(''); (source / '.venv').mkdir(); (source / '.venv/junk').write_text('x')
+    commit, version, modified, archive, changed = installer.tree(source, None, False)
+    assert version == '1.4.0' and modified is False and len(commit) == 40 and changed == []
+    import io, tarfile
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar: names = tar.getnames()
+    assert 'reeve/__init__.py' in names and 'pyproject.toml' in names and not any(n.startswith('.venv') for n in names)
+    assert installer.tree(source, None, False)[0] == commit  # the same tree gives the same identity
+
+
 def test_a_modified_release_carries_the_working_trees_files(tmp_path, monkeypatch):
     monkeypatch.setattr(installer, 'BASE', tmp_path / 'opt')
     monkeypatch.setattr(installer, 'run', lambda *args, cwd=None: '')  # no venv or pip in a test

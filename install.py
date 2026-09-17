@@ -171,8 +171,29 @@ def describe(source, git, commit):
     return (match.group(1) if match else "0") + "+" + commit[:7]
 
 
+def tarball_tree(source):
+    """A tree without git, such as GitHub's release tarball: the version from the project file, the files as they are."""
+    text = (source / "pyproject.toml").read_text()
+    match = re.search(r'^version = "([^"]+)"', text, re.M)
+    version = match.group(1) if match else "0"
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as tar:
+        for path in sorted(source.rglob("*")):
+            relative = path.relative_to(source)
+            if any(part in (".git", ".venv", "__pycache__", ".pytest_cache") for part in relative.parts) or not path.is_file(): continue
+            tar.add(path, arcname=str(relative))
+    archive = buffer.getvalue()
+    import hashlib
+    commit = hashlib.sha256(archive).hexdigest()[:40]
+    return commit, version, False, archive, []
+
+
 def tree(source, commit, allow_modified):
     """What to install: the commit, its version, whether the working tree's changes are included, and the archive."""
+    if not (source / ".git").exists() and not commit:
+        return tarball_tree(source)
+    if not shutil.which("git"):
+        raise SystemExit("git is not installed; install it (apt-get install git) or install from a release tarball")
     git = ["git", "-c", f"safe.directory={source}", "-C", str(source)]
     head = run(*git, "rev-parse", "HEAD")
     status = subprocess.check_output([*git, "status", "--porcelain", "--untracked-files=no"], text=True)
@@ -335,12 +356,13 @@ def main():
         raise SystemExit("Reeve installs on Debian 13")
     missing = [p for p in PACKAGES if subprocess.run(["dpkg-query", "-W", "-f=${Status}", p], capture_output=True, text=True).stdout.strip() != "install ok installed"]
     if missing:
+        say("Installing packages: " + " ".join(missing))
         run("apt-get", "update", "-qq"); run("apt-get", "install", "-y", "-qq", "--no-install-recommends", *missing)
     data_filesystem(args.data_device)
     docker_engine()
     daemon_setting("userland-proxy", False)
     commit, version, modified, archive, changed = tree(source, args.commit, args.allow_modified)
-    source_url = subprocess.run(["git", "-c", f"safe.directory={source}", "-C", str(source), "remote", "get-url", "origin"], capture_output=True, text=True).stdout.strip() or None
+    source_url = (subprocess.run(["git", "-c", f"safe.directory={source}", "-C", str(source), "remote", "get-url", "origin"], capture_output=True, text=True).stdout.strip() or None) if (source / ".git").exists() else None
     release = install_release(source, commit, version, modified, archive, changed)
     python = foundation(release)
     previous = activate(release, python)

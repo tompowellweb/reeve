@@ -24,7 +24,8 @@ Nothing else: not the old server's ledger, disk or keys.
    backups or a newer one (an older release lacks the restore fixes newer backups depend on):
 
    ```sh
-   git clone https://github.com/tompowellweb/reeve.git && cd reeve && git checkout v1.1.0
+   sudo apt-get install -y git
+   git clone https://github.com/tompowellweb/reeve.git && cd reeve && git checkout v1.1.1
    sudo ./install.py --data-device /dev/vdb
    ```
 
