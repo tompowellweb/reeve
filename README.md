@@ -9,6 +9,10 @@ and Docker Compose applications, with databases, backups and file access from a 
 - Back up sites locally and to SFTP or Amazon S3, and restore them on a replacement server.
 - Monitor server resources, site health, traffic and outgoing mail.
 
+![The server page: load, memory, disk, backups, mail and SFTP, and every site's health and traffic](docs/images/home.png)
+
+![A site page: services, domains and routing, files and access, traffic, backups and recent activity](docs/images/site.png)
+
 Reeve targets Debian 13 on amd64, with Docker and XFS project quotas. The installer sets up
 these dependencies. Administration is through an SSH tunnel or VPN.
 

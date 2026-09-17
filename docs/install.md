@@ -51,6 +51,8 @@ sudo reeve password
 
 ## Before adding sites
 
+![The Backup destination page](images/backups.png)
+
 Review `/srv/ops/server.yaml`. Set `profile` to `small`, `standard` or `large` to choose
 resource defaults; use `small` for a 2–4 GB server. The default is `standard`.
 The repository's `config/server.example.yaml` lists storage and retention settings.

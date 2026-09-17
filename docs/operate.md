@@ -21,6 +21,8 @@ complete WordPress/MariaDB example and explains the supported formats and curren
 
 ## Create a managed static or PHP site
 
+![The Create site form](images/create.png)
+
 Choose **Create site**, enter a name and hostname, then select static or PHP hosting.
 For PHP, choose a branch and optionally a database. Set the disk quota and any resource limits.
 
@@ -34,6 +36,10 @@ Creation continues if you close the page. If it fails, read the operation's outp
 using **Retry setup**. Site content lives at `/srv/sites/<name>/html`.
 
 ## Change domains, PHP or databases
+
+![The PHP limits dialog](images/dialog-php-limits.png)
+
+![The database usage dialog](images/dialog-database-usage.png)
 
 **Domains** replaces the complete hostname list; put the primary name first and include
 every alias you want to keep. **Site rules** accepts nginx redirects and routing rules;
@@ -57,7 +63,11 @@ application login; PHP receives the connection settings as `DATABASE_*` variable
 Changing database usage restarts that database briefly. PHP 7.0 and 7.1 sites using MySQL
 require the 8.0 series with legacy authentication, or use MariaDB.
 
+![The database version catalogue](images/databases.png)
+
 ## Files and access
+
+![The Customer SFTP dialog](images/dialog-sftp.png)
 
 Use **Files and tools** to upload files or archives, edit text, import a single-database SQL
 dump, and run PHP, Composer, WP-CLI or shell commands. Uploads are limited to 512 MiB.
@@ -72,6 +82,8 @@ The **SSH toolbox** provides a shell through the server's SSH connection. Stop t
 before making other changes to the site.
 
 ## Backups and restores
+
+![A site's backups page](images/site-backups.png)
 
 Connect an SFTP or Amazon S3 destination on the server's **Backups** page. Save the repository
 password outside the server. For SFTP, also keep the destination's host key fingerprint and
@@ -104,7 +116,11 @@ sudo reeve backup copy
 See [Recover](recover.md) for a replacement server. Check that remote copies succeed and
 rehearse a restore before relying on them.
 
+![Deleted sites and their final backups](images/history.png)
+
 ## Outgoing mail
+
+![The Mail page](images/mail.png)
 
 PHP sites send through the shared relay using `mail()` or SMTP at `mail:25`.
 Use **Allowed senders** for sender domains beyond the site's hostnames. The **Mail** page
@@ -122,6 +138,8 @@ sudo reeve mail setup
 Public delivery also depends on the server's mail and DNS configuration.
 
 ## Updates
+
+![The PHP page: catalogue, rebuild policy and the release notice](images/php.png)
 
 Reeve reports new releases but installs them only when requested:
 

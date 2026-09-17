@@ -23,6 +23,8 @@ newer one. Keep the operator password and sign in through the SSH tunnel.
 
 ## 2. Connect the backup repository
 
+![The Backup destination page with a repository connected](images/backups.png)
+
 On **Backups**, enter the existing destination and choose **existing repository password**.
 For SFTP, authorise this server's public key if needed and compare the host key fingerprint
 with your saved copy.
