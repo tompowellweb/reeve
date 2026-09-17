@@ -9,7 +9,17 @@ The home page shows resource use, backup status, mail and the sites on the serve
 Each site shows its health, traffic and disk usage against its quota. Check the timestamp
 on the figures: the page can display the last collected summary while the worker is busy.
 
-## Create a site
+## Deploy a Compose application
+
+Use **Import application** for an application with its own Docker Compose setup. Reeve
+builds or pulls its images, restores supplied database dumps, and routes a hostname to its
+HTTP service. Uploading the project reviews it; deployment is a separate step.
+
+[Host a Compose application](compose.md) walks through preparing the folder, including
+configuration and existing data, creating the archive, and deploying it. It includes a
+complete WordPress/MariaDB example and explains the supported formats and current limits.
+
+## Create a managed static or PHP site
 
 Choose **Create site**, enter a name and hostname, then select static or PHP hosting.
 For PHP, choose a branch and optionally a database. Set the disk quota and any resource limits.
@@ -22,11 +32,6 @@ sudo reeve site list
 
 Creation continues if you close the page. If it fails, read the operation's output before
 using **Retry setup**. Site content lives at `/srv/sites/<name>/html`.
-
-For a Compose application, choose **Import application** and upload a ZIP or tar containing
-the project, Dockerfiles and required files. Select the service and port to expose, review
-the import, then deploy. Reeve places it behind the shared proxy and includes supported
-databases in the backup schedule. Host access and privileged configurations are restricted.
 
 ## Change domains, PHP or databases
 

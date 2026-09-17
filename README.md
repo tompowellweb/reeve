@@ -15,6 +15,7 @@ these dependencies. Administration is through an SSH tunnel or VPN.
 ## Documentation
 
 - [Install](docs/install.md) — set up a server and sign in.
+- [Host a Compose application](docs/compose.md) — prepare an application, package its data and deploy it.
 - [Operate](docs/operate.md) — manage sites, backups and updates.
 - [Recover](docs/recover.md) — restore sites after losing a server.
 - [Design](docs/design.md) — understand the architecture.
