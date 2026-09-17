@@ -5,9 +5,14 @@ already has an XFS data filesystem and Docker. The same steps begin [recovery](r
 
 ## What you need
 
-- Debian 13 (trixie), amd64, an administrator with sudo, network access to the Debian and Docker
-  package repositories and to Docker Hub. 2 GB of memory is the floor; the server profile
-  (below) fits the defaults to the box.
+- **Debian 13 (trixie), amd64, a minimal install**: from the Debian installer choose only the
+  "SSH server" task (no desktop, no web server). A cloud image is the same thing. The installer
+  adds what it needs: git, xfsprogs, python3-venv, restic, curl and Docker.
+- An administrator account with `sudo`, reached over SSH by key. Root login off, no passwordless
+  sudo: the installer and every `reeve` command that changes something run under `sudo` and a
+  password prompt is normal. Nothing in Reeve calls sudo itself.
+- Network access to the Debian and Docker package repositories and to Docker Hub.
+- 2 GB of memory is the floor; the server profile (below) fits the defaults to the box.
 - Somewhere for the data: a filesystem mounted at `/srv`, or an empty disk or partition the
   installer may format. An XFS `/srv` is adopted; one without project quotas gets the `prjquota`
   mount option added and is remounted (the installer asks for a reboot when it is busy); an
@@ -90,6 +95,17 @@ sudo reeve update --to 1.2.0 # a named one, also the way back
 The update fetches the release into `/opt/reeve/src` and runs its installer, which refuses a
 release that cannot read the current database and returns to the running one if the new one
 does not come up. Sites keep serving throughout; the panel's two processes restart.
+
+To let the administrator run updates without a password, from a script or over SSH in one
+line, allow that one command and nothing else in a sudoers drop-in (replace `admin`):
+
+```sh
+echo 'admin ALL=(root) NOPASSWD: /usr/local/bin/reeve update, /usr/local/bin/reeve update --to *' \
+  | sudo tee /etc/sudoers.d/reeve-update >/dev/null && sudo chmod 440 /etc/sudoers.d/reeve-update
+sudo visudo -c
+```
+
+Everything else stays behind the password.
 
 ## Then
 

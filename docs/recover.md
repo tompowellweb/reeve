@@ -19,7 +19,8 @@ Nothing else: not the old server's ledger, disk or keys.
 
 ## Steps
 
-1. **Provision** a Debian 13 machine with an administrator and an empty second disk.
+1. **Provision** a minimal Debian 13 machine (the installer's "SSH server" task only, or a cloud
+   image) with an administrator that has sudo, SSH by key, and an empty second disk.
 2. **Install**, as root, with the source cloned and checked out at the release that wrote the
    backups or a newer one (an older release lacks the restore fixes newer backups depend on):
 

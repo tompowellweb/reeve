@@ -35,7 +35,7 @@ the quota report.
 
 ## Documents
 
-- [Install](docs/install.md): an empty Debian 13 machine to a running panel.
+- [Install](docs/install.md): a minimal Debian 13 machine to a running panel.
 - [Operate](docs/operate.md): sites, domains, PHP, databases, backups, SFTP, mail, updates.
 - [Recover](docs/recover.md): the runbook for a lost machine.
 - [Design](docs/design.md): the architecture, the security model, the job pattern.
