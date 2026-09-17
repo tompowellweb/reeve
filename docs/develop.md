@@ -1,59 +1,57 @@
 # Develop
 
-## Running the tests
+Reeve uses Python 3.13 and uv. Run the following from the repository root.
+
+## Tests
 
 ```sh
 uv sync --locked
-umask 077; uv run --locked pytest -q
+umask 077
+uv run --locked pytest -q
 ```
 
-The suite runs in a few seconds and touches nothing outside temporary folders: commands are
-faked, the ledger is a temporary SQLite file. Run it under `umask 077`, as the worker runs,
-because file modes are part of what is tested. `uv.lock` pins the development environment;
-`requirements.lock` pins, with hashes, what the installer puts on a server.
+The unit suite uses temporary files and simulated host commands. The restrictive umask
+matches the worker and catches permission errors. `uv.lock` pins the development environment;
+`requirements.lock` pins the packages installed on servers.
 
-Browser acceptance scripts (`tests/browser_*.py`, Playwright) and whole-machine checks
-(`tests/verify_*.py`) run on a test server as its browser identity or as root and alter only
-named disposable fixtures. They are tooling, not the suite.
+Browser scripts in `tests/browser_*.py` and machine checks in `tests/verify_*.py` need a
+prepared test server and can change it. Read the selected script's requirements before running it.
 
-## Delivering a change
+## Where to work
 
-1. Commit and push; tag a release as `vX.Y.Z` when it is one. The installer installs what is
-   checked out and records the tag, or the version plus commit between tags; a dirty tree needs
-   `--allow-modified` and shows as modified.
-2. On a server: `git pull --ff-only` in the clone, then `sudo python3 install.py`; or `sudo reeve
-   update` once the release is tagged and pushed, which does the same from the panel's own clone.
-3. The installer refuses a release whose worker cannot read the current ledger schema and keeps
-   the previous release under `/opt/reeve/releases/` for rollback: `sudo reeve update --to
-   <previous version>`. Rollback does not rewind content or job history.
+| Path | Purpose |
+| --- | --- |
+| `reeve/worker.py` | Worker requests, scheduling and startup recovery |
+| `reeve/web.py`, `reeve/*_web.py` | Web routes |
+| `reeve/core.py`, `reeve/host.py` | Job storage and host operations |
+| `reeve/templates/`, `reeve/static/` | Interface templates and assets |
+| `templates/` | Container build recipes and helper scripts |
+| `install.py`, `reeve/setup.py`, `systemd/` | Installation and services |
+| `config/`, `tests/` | Configuration and verification |
 
-A schema change bumps the ledger's version list in `config/capabilities.json` and the checks in
-`reeve/core.py` and `install.py`, and says in its commit which older releases stop being rollback
-targets. An additive table (traffic, remote copies) needs no bump: older workers ignore it.
+Feature modules live under `reeve/`. Follow `reeve/php_settings.py` for an example of a
+recorded operation with validation and rollback. Register new worker requests in the field
+table in `reeve/worker.py`, and put startup recovery under the existing recovery guard.
+See [Design](design.md) and [Engineering decisions](decisions.md) for the constraints.
 
-## Rules for changing it
+## Prepare a release
 
-- **One mechanism, not variations.** Script the base case; a rare case gets a binding point, not
-  a branch. A new operation that can fail half-way is a durable job with validate, apply, verify
-  and rollback, following `reeve/php_settings.py`, not an ad hoc sequence.
-- **The worker owns privilege.** The web process runs unprivileged and asks the worker over the
-  socket with a fixed message shape; it never runs Docker, never reads site data. New worker
-  operations are declared in the field table at the top of `reeve/worker.py`.
-- **Files bind-mounted into running containers are updated in place**, never replaced by rename.
-- **Every startup recovery runs under the guard** in `startup_recovery()`; a module that fails
-  to recover is reported and leaves its job for review, and the worker still starts.
-- **Nothing private in the tree.** No customer names, addresses, hostnames, keys or dumps. Test
-  data uses example names and documentation addresses.
-- **Prefer an exercise to a feature.** A change that touches backups, restore or recovery is
-  proven by running the failure it guards against, on a test machine, before it is called done.
+1. Run relevant tests. Exercise host changes on a test server; backup or restore changes
+   require a restore exercise.
+2. Commit the tested changes. For a release, tag the commit `vX.Y.Z` and push the commit and tag.
+3. Install the selected commit on the test server with `sudo python3 install.py`, or install
+   the published version with `sudo reeve update --to <version>`.
+4. Check service health and the behaviour changed by the release.
 
-## Layout
+The installer rejects a dirty checkout unless `--allow-modified` is supplied, which marks
+the installation as modified. Use committed releases for deployment.
 
-- `reeve/`: the package. `worker.py` (the socket server and the loop), `web.py` and the `*_web.py`
-  modules (routes), `core.py` (the ledger), `host.py` (the site and edge implementation), one
-  module per feature, `templates/` and `static/`.
-- `templates/`: Containerfiles and scripts for the PHP images, toolboxes, content tools and mail.
-- `systemd/`: the three units and the timer. `config/`: the capabilities record and the settings
-  example. `scripts/restore-sites.sh`: the recovery restore. `install.py`: the installer, with
-  `reeve/setup.py` for the steps it runs inside the release.
-- `tests/`: the suite and the acceptance tooling.
+## Schema changes and rollback
+
+The installer checks whether a release can read the existing worker database. A schema change
+must review `config/capabilities.json`, `reeve/core.py` and `install.py`, and document any
+versions that can no longer be used for rollback. Additive tables that older workers can
+safely ignore do not require a schema bump.
+
+Use `sudo reeve update --to <previous-version>` to return to a compatible release.
+This changes the software; it does not rewind site content or job history.

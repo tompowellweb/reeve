@@ -1,50 +1,30 @@
 # Reeve
 
-A small hosting panel for one Debian server: static and PHP sites, optional databases, and
-Docker Compose applications, each in its own confined containers behind one Caddy edge, with
-backups that restore on a clean machine.
+Reeve is a hosting panel for a single Debian server. It manages static sites, PHP sites
+and Docker Compose applications, with databases, backups and file access from a web interface.
 
-A reeve ran an estate and answered for its tenants. This one runs a box.
+- Create sites with their own containers, domains and disk quotas.
+- Choose a PHP version and an optional MariaDB, MySQL or PostgreSQL database.
+- Upload files, use SFTP and run site tools or scheduled commands.
+- Back up sites locally and to SFTP or Amazon S3, and restore them on a replacement server.
+- Monitor server resources, site health, traffic and outgoing mail.
 
-## What it does
+Reeve targets Debian 13 on amd64, with Docker and XFS project quotas. The installer sets up
+these dependencies. Administration is through an SSH tunnel or VPN.
 
-- **Sites.** Static or PHP (7.0 to 8.5, branch-pinned images built from Surý packages), one
-  Linux identity and one XFS hard quota per site, nginx and PHP-FPM in separate containers, an
-  optional MariaDB, MySQL or PostgreSQL server per site.
-- **Compose applications.** A packaged Compose project runs as supplied, behind the same edge,
-  under the same quota, with its databases dumped on the same schedule.
-- **Backups.** Database dumps every 15 minutes, a complete site backup nightly, retention by
-  age, an off-machine copy to SFTP or Amazon S3 through restic, restore to a new site or into
-  the same one, and a deleted site's final backup kept.
-- **Operations.** Per-site domains and routing rules, PHP limits, scheduled commands, WP-CLI, a
-  site SSH toolbox, key-only customer SFTP (SFTPGo), a send-only mail relay, weekly PHP patch
-  rebuilds with rollback, bounded logs, and a home page that shows the server's load, memory,
-  disk and each site's traffic.
-- **Recovery.** From an empty Debian machine to serving sites in a few minutes with the source,
-  the backup repository and its password. Nothing else from the old server is needed.
+## Documentation
 
-## How it is built
+- [Install](docs/install.md) — set up a server and sign in.
+- [Operate](docs/operate.md) — manage sites, backups and updates.
+- [Recover](docs/recover.md) — restore sites after losing a server.
+- [Design](docs/design.md) — understand the architecture.
+- [Decisions](docs/decisions.md) — understand the main engineering constraints.
+- [Develop](docs/develop.md) — run tests and prepare changes.
 
-Two processes: a web UI (FastAPI, no JavaScript framework, runs as an unprivileged user) and a
-root worker that owns every privileged operation, reached over a Unix socket with peer
-credentials. Every operation that can fail half-way is a durable job in a SQLite ledger with
-validate, apply, verify and rollback steps, so a crash mid-operation leaves a site serving and
-a job marked for review, never a half-changed site. There is no agent in the containers and no
-daemon beyond the two processes; the figures on the home page come from the kernel, Docker and
-the quota report.
+## Project status
 
-## Documents
+Reeve is being tested with real workloads ahead of a production migration. Site HTTPS
+currently uses a local certificate authority; public TLS, DNS, firewall rules and mail
+delivery need deployment work.
 
-- [Install](docs/install.md): a minimal Debian 13 machine to a running panel.
-- [Operate](docs/operate.md): sites, domains, PHP, databases, backups, SFTP, mail, updates.
-- [Recover](docs/recover.md): the runbook for a lost machine.
-- [Design](docs/design.md): the architecture, the security model, the job pattern.
-- [Decisions](docs/decisions.md): rules learned from real failures, kept on purpose.
-- [Develop](docs/develop.md): tests, releases, the rules for changing it.
-
-## Status
-
-Reeve is in use on a test server with real workloads rehearsed through it, ahead of a
-production migration. The public-facing gates (TLS with real DNS, firewall policy, real mail
-delivery) are validated per deployment; the panel itself is complete for the workloads it was
-built for. No licence has been chosen yet; all rights reserved until one is.
+No licence has been selected. All rights reserved.

@@ -1,76 +1,71 @@
 # Recover
 
-The runbook for a lost machine: from an empty Debian 13 machine to the sites serving again.
-Measured on a test VM at 190 seconds for three sites, 128 seconds for three real sites totalling
-2.2 GB.
+Use this guide to restore sites onto a replacement Debian 13 server. For an individual
+site restore on a working server, use its **Backups** page.
 
-## What must exist outside the server
+## Keep these outside the server
 
-| Input | Where it lives |
-|---|---|
-| This repository at the tested commit | Git |
-| The backup repository | The SFTP server or the S3 bucket the panel copied to |
-| The repository password | The operator's password manager, one entry per repository, named by the repository id the Backups page showed |
-| The destination's host key fingerprint (SFTP) | Beside the password |
-| A way to authorise a new SSH key on the destination account (SFTP), or the S3 key pair | The operator |
-| Each site's backup id and hostnames | The Backups page of the old panel; or a `restic snapshots --tag hosting-site:<site id>` listing plus the `domains` field of a backup's manifest |
+- Access to the Reeve source at the release used for backups, or a compatible newer release.
+- The backup destination address, repository password and SFTP or S3 access credentials.
+- For SFTP, the trusted host key fingerprint and a way to authorise a new SSH key.
+- The complete backup ID, site name and hostnames for each site you want to restore.
 
-Nothing else: not the old server's ledger, disk or keys.
+Record these when setting up backups. If the old panel is unavailable, the restic repository's
+snapshot tags contain `hosting-site:<backup-id>`; backup manifests contain the site name and
+domains. **The backup ID is not the restic snapshot ID.**
 
-## Steps
+The old panel database and server disk are not required.
 
-1. **Provision** a minimal Debian 13 machine (the installer's "SSH server" task only, or a cloud
-   image) with an administrator that has sudo, SSH by key, and an empty second disk.
-2. **Install**, as root, with the source cloned and checked out at the release that wrote the
-   backups or a newer one (an older release lacks the restore fixes newer backups depend on):
+## 1. Install the replacement server
 
-   ```sh
-   sudo apt-get install -y git
-   git clone https://github.com/tompowellweb/reeve.git && cd reeve && git checkout v1.1.4
-   sudo python3 install.py --data-device /dev/vdb
-   ```
+Follow [Install](install.md), using the release that produced the backups or a compatible
+newer one. Keep the operator password and sign in through the SSH tunnel.
 
-   The installer formats the empty data disk, installs Docker and the release, and prints the
-   operator password once. About two minutes.
-3. **Connect the repository** on the Backups page, choosing "existing repository password" and
-   pasting it. The page probes and pins the destination's host key (compare the fingerprint it
-   shows with the recorded one), opens the repository, records its identity, and leaves uploads
-   paused. For SFTP with a key, the page shows this machine's public key to authorise on the
-   destination account first. The same can be done by hand under
-   `/srv/ops/panel/worker/remote-secrets/` and `remote-backup.json`.
-4. **Restore**, as root:
+## 2. Connect the backup repository
 
-   ```sh
-   sh scripts/restore-sites.sh "<backup id>=<name>=<hostname>[,<alias>...]" ...
-   ```
+On **Backups**, enter the existing destination and choose **existing repository password**.
+For SFTP, authorise this server's public key if needed and compare the host key fingerprint
+with your saved copy.
 
-   Each backup is fetched into local staging and restored as a new site through the ordinary
-   path: managed sites are created and refilled, Compose packages rebuilt from their Dockerfiles.
-   A restore gives the site one hostname; when the spec lists aliases the script applies the full
-   list afterwards as a domains job. Aliases are never restored by themselves because they belong
-   to the old site's identity.
-5. **Verify**: `reeve site list` shows every site succeeded and healthy; open each hostname over HTTPS
-   through the machine's own edge (`curl --resolve <host>:443:127.0.0.1` with the local CA from
-   `/srv/ops/proxy/data/caddy/pki/authorities/local/root.crt`); log in to one application.
-6. **Set the operator password**: the installer printed one; change it with `reeve password`. Point DNS at the machine when it is the
-   real server.
-7. **Turn uploads on** from the Backups page only when this machine owns the repository from now
-   on. Two panels uploading to one repository is not supported.
+Leave uploads paused until this server is ready to take over. Two panels uploading to one
+repository are not supported.
 
-## What can go wrong
+## 3. Restore the sites
 
-- The installer refuses a data device with any signature and a checkout with uncommitted changes.
-  It never formats over data; fix the cause.
-- A missing PHP branch image is built during the site's create (a minute or two); a Compose
-  package with a Dockerfile builds it.
-- Restore keeps the application's stored URLs. WordPress under a new hostname needs its own
-  search-and-replace.
-- A destination that is unreachable fails the fetch before anything is created; nothing to undo.
-- A repository left locked by a crashed uploader is unlocked at the start of each copy cycle.
+On the replacement server, run:
 
-## Everyday restores
+```sh
+sudo sh /opt/reeve/current/scripts/restore-sites.sh \
+  '<backup-id>=shop=shop.example.com,www.shop.example.com'
+```
 
-The same mechanism serves smaller cases from the panel: a site's Backups page offers **New site**
-from any backup, **Files into this site** and **Database into this site** (a safety backup is
-taken first), **Download** of a backup, and **Import a backup** from elsewhere. **History** lists
-deleted sites with their final backups and restores them.
+Replace the example with the backup ID, new site name and hostnames. The first hostname is
+primary. Add one quoted argument per site.
+
+The script downloads each backup and restores it as a new site. Missing PHP images and
+Compose builds can add time. Read the reported site, restore and domain job states;
+investigate any failure before proceeding.
+
+## 4. Verify before switching traffic
+
+```sh
+sudo reeve site list
+sudo reeve site restores shop
+```
+
+Confirm that site creation and restoration succeeded. Test every hostname through the new
+server's proxy. With the current local CA setup, run this on the server:
+
+```sh
+sudo curl --cacert /srv/ops/proxy/data/caddy/pki/authorities/local/root.crt \
+  --resolve shop.example.com:443:127.0.0.1 https://shop.example.com/
+```
+
+Also test application login, database content and uploaded files. Restoring does not rewrite
+URLs stored by an application; a hostname change may need application-specific changes.
+
+## 5. Take over
+
+Complete public TLS and firewall configuration, then point DNS at the replacement server.
+Once this is the only server writing to the repository, resume uploads on **Backups** and
+confirm that a new backup is copied successfully.
