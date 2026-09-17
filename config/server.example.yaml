@@ -12,6 +12,14 @@ defaults:
 nginx_image: nginx@sha256:dc5069ad14f19660b141b21236140b91656bf89bbc3e2417c70ae650cd66104c
 caddy_image: caddy:2@sha256:13ba145cba2f3e28fa801994876e4c086d1b95d5aa2a520a734765ffb6b12017
 # Null container caps mean unlimited. Public TLS policy remains a later gate.
+# Site certificates: internal (the edge's own certificate authority; a test machine or private
+# names) or public (Let's Encrypt; needs the sites' DNS pointing here and ports 80 and 443
+# reachable from the internet). The email is the certificate authority's contact for expiry
+# notices. After changing it: sudo reeve doctor --repair (or restart reeve-worker).
+tls:
+  mode: internal
+  email: ""
+
 # Where local backups live (database dumps, complete site backups, restore staging). To move it:
 # stop the panel services, move the folder, change this, start them again.
 backups:

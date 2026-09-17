@@ -28,8 +28,9 @@ these dependencies. Administration is through an SSH tunnel or VPN.
 
 ## Project status
 
-Reeve is being tested with real workloads ahead of a production migration. Site HTTPS
-currently uses a local certificate authority; public TLS, DNS, firewall rules and mail
-delivery need deployment work.
+Reeve is being tested with real workloads ahead of a production migration. Sites use the
+edge's own certificate authority by default; `tls.mode: public` switches to Let's Encrypt once
+DNS points at the server. Public TLS, firewall rules and mail delivery are still to be proven on
+a server with a public address.
 
 No licence has been selected. All rights reserved.

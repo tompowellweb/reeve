@@ -14,14 +14,14 @@ installation must use rootful overlay2 with its data under `/srv/docker`.
 
 ## Install Reeve
 
-The example below installs release `v1.1.5`. Replace `/dev/vdb` with the empty data device
+The example below installs release `v1.1.6`. Replace `/dev/vdb` with the empty data device
 you intend to use: **the installer will format it**.
 
 ```sh
 sudo apt-get install -y git
 git clone https://github.com/tompowellweb/reeve.git
 cd reeve
-git checkout v1.1.5
+git checkout v1.1.6
 sudo python3 install.py --data-device /dev/vdb
 ```
 
@@ -66,5 +66,15 @@ sudo systemctl restart reeve-worker
 Connect a backup destination on the **Backups** page and save its repository password
 outside the server. See [Operate](operate.md) for mail settings, site creation and updates.
 
-Site routes currently use Caddy's local CA. Public certificates, DNS and firewall rules
-must be arranged before serving public traffic.
+Sites get certificates from the edge's own certificate authority until you switch to public
+ones. When the sites' DNS points at this server and ports 80 and 443 are reachable from the
+internet, set in `server.yaml`:
+
+```yaml
+tls:
+  mode: public
+  email: you@example.com
+```
+
+Then `sudo reeve doctor --repair`. Caddy obtains a Let's Encrypt certificate for each hostname
+and renews it. Firewall rules and outgoing mail delivery still need arranging on a public server.

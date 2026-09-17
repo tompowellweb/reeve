@@ -42,6 +42,24 @@ def backup_root():
 BACKUPS = backup_root()
 
 
+def tls_settings():
+    """`tls:` in server.yaml: `mode` internal (the edge's own CA, for a test machine or private names) or
+    public (certificates from Let's Encrypt, which needs real DNS and ports 80 and 443 reachable), and
+    the contact `email` the certificate authority wants. Internal by default."""
+    default = {'mode': 'internal', 'email': ''}
+    config = OPS / 'server.yaml'
+    try:
+        values = (yaml.safe_load(config.read_text()) or {}).get('tls', {}) if config.exists() else {}
+    except (OSError, yaml.YAMLError):
+        return default
+    if not isinstance(values, dict) or values.keys() - default.keys(): raise ValueError('Invalid tls settings in server.yaml')
+    result = {**default, **values}
+    if result['mode'] not in ('internal', 'public'): raise ValueError('tls.mode must be internal or public')
+    if not isinstance(result['email'], str) or (result['email'] and not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', result['email'])):
+        raise ValueError('tls.email must be an email address')
+    return result
+
+
 def command(args, timeout=120):
     # A disk file bounds memory, a child file-size limit bounds noisy helper output.
     with tempfile.TemporaryFile() as output:
@@ -410,9 +428,10 @@ class Host:
         self.verify_domains(domains)
 
     def verify_domains(self, domains):
+        # With the edge's own CA the check trusts that CA; with public certificates it trusts the system's.
+        trust = [] if tls_settings()['mode'] == 'public' else ["--cacert", PROXY / "data/caddy/pki/authorities/local/root.crt"]
         for domain in domains:
-            command(["curl", "--noproxy", "*", "--fail", "--silent", "--show-error", "--retry", "5", "--retry-all-errors",
-                     "--cacert", PROXY / "data/caddy/pki/authorities/local/root.crt",
+            command(["curl", "--noproxy", "*", "--fail", "--silent", "--show-error", "--retry", "5", "--retry-all-errors", *trust,
                      "--resolve", f"{domain}:443:127.0.0.1", f"https://{domain}/__hosting_health"], timeout=45)
 
     def change_domains(self, row, domains):
@@ -532,12 +551,18 @@ def unpublish(host, row):
     write_edge_compose(host.config, remaining)
 
 
-def render_routes(routes):
-    text = '{\n skip_install_trust\n servers {\n  protocols h1 h2\n }\n}\nhttp:// {\n respond "server is up" 200\n}\n'
+def render_routes(routes, tls=None):
+    """The edge's Caddyfile: one site block per hostname. With `tls.mode: internal` each block takes the
+    edge's own CA; with `public` the block has no tls line and Caddy obtains a public certificate for
+    the name, using the contact email in the global block."""
+    tls = tls or tls_settings()
+    contact = f" email {tls['email']}\n" if tls['mode'] == 'public' and tls['email'] else ''
+    text = '{\n skip_install_trust\n' + contact + ' servers {\n  protocols h1 h2\n }\n}\nhttp:// {\n respond "server is up" 200\n}\n'
+    per_site = ' tls internal\n' if tls['mode'] == 'internal' else ''
     for domain, item in sorted(routes.items()):
         # One rolling JSON access log per hostname under the edge's own data: 20 MiB × 5 files, 30 days,
         # the input for fail2ban and for reading what a site received. Caddy's process log stays on stdout.
-        text += f'\n{domain} {{\n tls internal\n log {{\n  output file /data/logs/{domain}.log {{\n   roll_size 20MiB\n   roll_keep 5\n   roll_keep_for 720h\n  }}\n  format json\n }}\n request_header -X-Forwarded-*\n reverse_proxy {item["upstream"]} {{\n  header_up -Forwarded\n  header_up X-Forwarded-For {{http.request.remote.host}}\n  header_up X-Forwarded-Proto https\n  header_up X-Forwarded-Host {{http.request.host}}\n  header_up X-Forwarded-Port 443\n  header_up X-Real-IP {{http.request.remote.host}}\n }}\n}}\n'
+        text += f'\n{domain} {{\n{per_site} log {{\n  output file /data/logs/{domain}.log {{\n   roll_size 20MiB\n   roll_keep 5\n   roll_keep_for 720h\n  }}\n  format json\n }}\n request_header -X-Forwarded-*\n reverse_proxy {item["upstream"]} {{\n  header_up -Forwarded\n  header_up X-Forwarded-For {{http.request.remote.host}}\n  header_up X-Forwarded-Proto https\n  header_up X-Forwarded-Host {{http.request.host}}\n  header_up X-Forwarded-Port 443\n  header_up X-Real-IP {{http.request.remote.host}}\n }}\n}}\n'
     return text
 
 

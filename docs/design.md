@@ -34,7 +34,7 @@ and storage. Named volumes sit under the site's quota. Host access and privilege
 are restricted, but applications do not receive all the managed-site container restrictions.
 
 Proxy changes are validated before reload, with the previous configuration retained for
-rollback. The current route template uses Caddy's local certificate authority.
+rollback. Routes use Caddy's own certificate authority or Let's Encrypt, as `tls.mode` says.
 
 ## Backups and recovery
 

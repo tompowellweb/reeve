@@ -34,3 +34,28 @@ def test_private_config_filter_does_not_block_wordpress_compose_js_or_public_slu
         assert not rule.search(path)
     for path in ('/compose.yaml','/docker-compose.override.yml','/hosting.yaml','/Dockerfile','/composer.lock'):
         assert rule.search(path)
+
+
+def test_the_edge_takes_public_certificates_when_tls_mode_is_public(tmp_path, monkeypatch):
+    from reeve import host as hm
+    internal = render_routes({'one.example.com': {'upstream': 'web:8080'}}, {'mode': 'internal', 'email': ''})
+    assert ' tls internal\n' in internal and 'email' not in internal
+    public = render_routes({'one.example.com': {'upstream': 'web:8080'}}, {'mode': 'public', 'email': 'ops@example.com'})
+    assert 'tls internal' not in public and ' email ops@example.com\n' in public and 'one.example.com {' in public and 'reverse_proxy web:8080' in public
+    assert 'email' not in render_routes({}, {'mode': 'public', 'email': ''})
+    ops = tmp_path / 'ops'; ops.mkdir(); monkeypatch.setattr(hm, 'OPS', ops)
+    assert hm.tls_settings() == {'mode': 'internal', 'email': ''}
+    (ops / 'server.yaml').write_text('tls:\n  mode: public\n  email: ops@example.com\n')
+    assert hm.tls_settings()['mode'] == 'public' and 'tls internal' not in render_routes({'a.example': {'upstream': 'w:1'}})
+    for bad in ('tls:\n  mode: sideways\n', 'tls:\n  email: not-an-address\n', 'tls:\n  cert: x\n'):
+        (ops / 'server.yaml').write_text(bad)
+        with pytest.raises(ValueError): hm.tls_settings()
+    # The hostname check trusts the edge's CA only in internal mode.
+    calls = []
+    monkeypatch.setattr(hm, 'command', lambda args, timeout=120: calls.append([str(a) for a in args]) or '')
+    (ops / 'server.yaml').write_text('tls:\n  mode: public\n')
+    hm.Host.verify_domains(None, ['a.example'])
+    assert '--cacert' not in calls[-1] and calls[-1][-1] == 'https://a.example/__hosting_health'
+    (ops / 'server.yaml').write_text('tls:\n  mode: internal\n')
+    hm.Host.verify_domains(None, ['a.example'])
+    assert '--cacert' in calls[-1]
