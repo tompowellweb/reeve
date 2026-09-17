@@ -1,0 +1,4 @@
+#!/bin/sh
+# Mail is not configured until the relay milestone. Never silently send imported-site mail.
+echo 'Hosting mail relay is not configured' >&2
+exit 69

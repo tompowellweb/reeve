@@ -1,0 +1,13 @@
+{% extends 'base.html' %}{% block title %}Import application · Reeve{% endblock %}{% block content %}
+<a href="/">← Sites</a><div class="heading"><h1>Import application</h1><a class="secondary" href="/agent-access">Agent access</a></div>
+<p>Supply a Compose project with its files and database dumps. Keep its folder layout; include Dockerfiles for custom builds or use registry images.</p>
+<div class="notice">Review a project, then deploy supported single-service applications. Database restore, multi-service deployment and whole-site backups are the next steps.</div>
+<form class="card narrow" id="application-upload" data-csrf="{{session.csrf}}"><h2>Review a project</h2>
+<label>Site name<input name="name" required pattern="[a-z0-9][a-z0-9-]{0,31}" placeholder="my-application"></label>
+<label>Domain<input name="domain" required placeholder="my-application.hosting.test"></label>
+<label>HTTP service<input name="service" required placeholder="web"></label><label>Container HTTP port<input name="port" type="number" min="1" max="65535" required value="80"></label>
+<label>Project archive<input name="file" type="file" required accept=".zip,.tar,.gz,.tgz"></label>
+<p class="muted">ZIP or tar, up to 512 MiB uploaded and 4 GiB expanded. Include one Compose file at the project root. No separate manifest.</p><button>Upload and review</button><p role="status" class="upload-status"></p></form>
+<section class="card"><h2>Received projects</h2>{% for item in imports %}<div class="summary-row"><div><strong>{{item.input.name}}</strong><small>{% if item.deployment %}{{'Deployed' if item.deployment.state == 'succeeded' else item.deployment.state}} · {{item.deployment.step}}{% else %}{{'Needs preparation' if item.state == 'needs_preparation' else 'Package reviewed'}}{% endif %} · {{item.created|timestamp}}{% if not item.review_version or item.review_version < 2 %} · Earlier preparation rules{% endif %}</small></div><a class="secondary" href="{{item.url}}">View project</a></div>{% else %}<p>No projects received.</p>{% endfor %}</section>
+<details class="card"><summary>Preparation instructions</summary><pre class="wrap-anywhere">{{prompt}}</pre></details>
+<script defer src="/static/import.js"></script>{% endblock %}

@@ -1,0 +1,4 @@
+<nav class="site-nav" aria-label="Site navigation">
+{% for suffix,label in [('', 'Overview'),('/files','Files and tools'),('/schedules','Scheduled tasks'),('/toolbox','SSH toolbox'),('/backups','Backups')] %}
+<a href="/sites/{{site.name}}{{suffix}}" {% if request.url.path == '/sites/' ~ site.name ~ suffix %}aria-current="page"{% endif %}>{{label}}</a>
+{% endfor %}</nav>

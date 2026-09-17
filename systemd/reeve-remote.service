@@ -1,0 +1,26 @@
+[Unit]
+Description=Hosting database dump remote copies
+After=network-online.target reeve-worker.service srv.mount
+Wants=network-online.target
+RequiresMountsFor=/srv
+BindsTo=srv.mount
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/reeve/current
+ExecStart=/opt/reeve/current/.venv/bin/python -m reeve.remote_backup
+UMask=0077
+TimeoutStartSec=35min
+TimeoutStopSec=15
+KillMode=control-group
+PrivateTmp=true
+ProtectHome=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/srv/ops/panel/worker /srv/backups/staging/db
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=768M
+CPUQuota=100%
+Nice=10
+IOSchedulingClass=idle

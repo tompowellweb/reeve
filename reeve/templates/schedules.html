@@ -1,0 +1,9 @@
+{% extends 'base.html' %}{% block title %}Scheduled commands · {{site.name}}{% endblock %}{% block content %}
+<a class="breadcrumb" href="/sites/{{site.name}}">← {{site.name}}</a><h1>Scheduled commands</h1>{% include 'site_nav.html' %}
+<p>Run commands for {{site.name}} without waiting for page visits. Each run uses the site's identity, files, PHP and database settings.</p>
+<p>Schedules wait while another operation or SSH toolbox uses this site. Missed intervals become one run; they do not build a queue. Failed runs pause the schedule for review. The worker must be running, and a busy worker can delay execution.</p>
+{% from 'site_forms.html' import schedule_form %}
+{% for s in schedules %}<section class="card"><h2>{{s.name}}</h2><p>{{'Enabled' if s.enabled else 'Paused'}} · every {{s.interval}} minutes{% if s.last_state %} · latest run: {{s.last_state}}{% endif %}</p>{% if s.error %}<p class="error">{{s.error}}</p>{% endif %}{% if s.last_job %}<p><a href="/sites/{{site.name}}/content/output/{{s.last_job}}">Latest output</a></p>{% endif %}<details><summary>Edit schedule</summary>{{schedule_form(site,session,s)}}</details></section>{% endfor %}
+<section class="card"><h2>Add schedule</h2>{{schedule_form(site,session)}}</section>
+<p>For WordPress, set <code>DISABLE_WP_CRON</code> to <code>true</code> in wp-config.php, then select WP-CLI with <code>cron event run --due-now</code>, or PHP script with <code>wp-cron.php</code>. WP-CLI arguments omit the leading <code>wp</code>. Saving starts the interval again. Disabling prevents future runs; a run already started continues. The last 20 completed runs are retained for each schedule.</p>
+{% endblock %}

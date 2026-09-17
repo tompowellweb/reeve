@@ -1,0 +1,35 @@
+FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
+ARG PHP_VERSION
+ENV DEBIAN_FRONTEND=noninteractive
+RUN echo "$PHP_VERSION" | grep -Eq '^[0-9]{1,2}\.[0-9]{1,2}$' \
+ && printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d \
+ && chmod 755 /usr/sbin/policy-rc.d \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
+ && curl --fail --silent --show-error --location https://packages.sury.org/debsuryorg-archive-keyring.deb -o /tmp/sury-keyring.deb \
+ && echo '7511384559c9ddf1d5ce5f60be429ae9d4e7d01d9480d6f1b7a30c0810cf8b60  /tmp/sury-keyring.deb' | sha256sum -c - \
+ && dpkg -i /tmp/sury-keyring.deb \
+ && printf 'deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ trixie main\n' > /etc/apt/sources.list.d/php.list \
+ && apt-get update \
+ && OPCACHE_PACKAGE="" \
+ && if dpkg --compare-versions "$PHP_VERSION" lt 8.5; then OPCACHE_PACKAGE="php${PHP_VERSION}-opcache"; fi \
+ && apt-get install -y --no-install-recommends \
+    php${PHP_VERSION}-fpm php${PHP_VERSION}-cli php${PHP_VERSION}-bcmath \
+    php${PHP_VERSION}-curl php${PHP_VERSION}-gd php${PHP_VERSION}-imagick \
+    php${PHP_VERSION}-intl php${PHP_VERSION}-mbstring php${PHP_VERSION}-mysql \
+    php${PHP_VERSION}-pgsql php${PHP_VERSION}-sqlite3 php${PHP_VERSION}-soap \
+    php${PHP_VERSION}-xml php${PHP_VERSION}-zip ${OPCACHE_PACKAGE} \
+    php${PHP_VERSION}-apcu php${PHP_VERSION}-redis php${PHP_VERSION}-memcached \
+    libfcgi-bin default-mysql-client postgresql-client msmtp \
+ && ln -sf /usr/bin/php${PHP_VERSION} /usr/local/bin/php \
+ && ln -sf /usr/sbin/php-fpm${PHP_VERSION} /usr/local/sbin/php-fpm \
+ && mkdir -p /usr/share/hosting-runtime \
+ && dpkg-query -W -f='${Package}\t${Version}\n' > /usr/share/hosting-runtime/packages.tsv \
+ && php -r 'echo json_encode(array("php_version" => PHP_VERSION, "extensions" => get_loaded_extensions()));' > /usr/share/hosting-runtime/php.json \
+ && rm -rf /var/lib/apt/lists/* /tmp/sury-keyring.deb
+COPY hosting-sendmail /usr/local/bin/hosting-sendmail
+RUN chmod 755 /usr/local/bin/hosting-sendmail
+WORKDIR /site
+USER 65534:65534
+ENTRYPOINT ["php-fpm"]
+CMD ["--nodaemonize", "--fpm-config", "/etc/hosting/php-fpm.conf"]

@@ -1,0 +1,40 @@
+schema: 1
+# The size of the box: small (2 to 4 GB), standard (8 to 16 GB) or large. A set of defaults only,
+# each overridable per site: PHP memory a request and workers per site, the memory cap a new site
+# gets, the usage a new database gets. A clean install is standard.
+profile: standard
+defaults:
+  data_mb: 1024
+  layer_mb: null
+  memory_mb: null
+  cpus: null
+  pids_limit: null
+nginx_image: nginx@sha256:dc5069ad14f19660b141b21236140b91656bf89bbc3e2417c70ae650cd66104c
+caddy_image: caddy:2@sha256:13ba145cba2f3e28fa801994876e4c086d1b95d5aa2a520a734765ffb6b12017
+# Null container caps mean unlimited. Public TLS policy remains a later gate.
+# Where local backups live (database dumps, complete site backups, restore staging). To move it:
+# stop the panel services, move the folder, change this, start them again.
+backups:
+  local_path: /srv/backups
+
+database_backups:
+  staging_limit_mb: 10240
+  artifact_limit_mb: 1024
+  reserve_free_mb: 2048
+  timeout_seconds: 900
+
+# Complete site backups: nightly hour (server local time).
+site_backups:
+  hour: 3
+
+# Retention, applied to local copies and to the off-machine repository alike. Database dumps are
+# short-lived because every complete site backup carries a fresh dump. Final and imported backups
+# are never expired. Site backups: keep everything within `within_days`, then one per day up to
+# `daily_days`, one per ISO week up to `weekly_days`, one per month up to `monthly_days`, nothing older.
+retention:
+  database_days: 2
+  site:
+    within_days: 2
+    daily_days: 7
+    weekly_days: 31
+    monthly_days: 365

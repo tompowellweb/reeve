@@ -1,0 +1,28 @@
+[Unit]
+Description=Hosting panel privileged operation worker
+Requires=docker.service
+After=docker.service srv.mount
+RequiresMountsFor=/srv
+BindsTo=srv.mount
+
+[Service]
+Type=simple
+User=root
+Group=hosting-web
+WorkingDirectory=/opt/reeve/current
+ExecStart=/opt/reeve/current/.venv/bin/python -m reeve.worker
+RuntimeDirectory=reeve
+RuntimeDirectoryMode=0750
+UMask=0077
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+PrivateTmp=true
+ProtectHome=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/srv/ops /srv/sites /srv/docker/volumes /srv/backups /run/reeve
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

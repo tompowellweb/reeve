@@ -1,0 +1,88 @@
+#!/usr/bin/env php
+<?php
+// Sendmail-compatible submission to the hosting relay, for PHP's mail() (sendmail_path = this file).
+// Speaks SMTP to `mail`, the relay's name on this site's private network. Accepts the sendmail
+// options PHP and PHPMailer use: -t (recipients from the headers), -i, -f sender, -F name, --,
+// and explicit recipient addresses. No PHP extension is needed; the syntax is PHP 7.0's, the oldest
+// branch hosted. Any failure exits non-zero with a
+// line on stderr, which lands in the PHP log; the relay itself refuses senders outside the site.
+
+$argv0 = array_shift($argv);
+$sender = null; $readHeaders = false; $recipients = [];
+for ($i = 0; $i < count($argv); $i++) {
+    $arg = $argv[$i];
+    if ($arg === '--') { $recipients = array_merge($recipients, array_slice($argv, $i + 1)); break; }
+    if ($arg === '-t') { $readHeaders = true; continue; }
+    if ($arg === '-i' || $arg === '-oi' || $arg === '-odb' || $arg === '-odi' || $arg === '-oem' || $arg === '-q') continue;
+    if ($arg === '-f' || $arg === '-r') { $sender = $argv[++$i] ?? null; continue; }
+    if (substr($arg, 0, 2) === '-f' || substr($arg, 0, 2) === '-r') { $sender = substr($arg, 2); continue; }
+    if ($arg === '-F' || $arg === '-N' || $arg === '-R' || $arg === '-V' || $arg === '-X') { $i++; continue; }
+    if ($arg === '-bm') continue;
+    if (substr($arg, 0, 1) === '-') continue;  // other sendmail switches carry no meaning here
+    $recipients[] = $arg;
+}
+
+$message = stream_get_contents(STDIN);
+if ($message === false || $message === '') { fwrite(STDERR, "hosting-sendmail: empty message\n"); exit(66); }
+$message = str_replace(["\r\n", "\r"], "\n", $message);
+$parts = explode("\n\n", $message, 2);
+$headerText = $parts[0]; $body = isset($parts[1]) ? $parts[1] : '';
+
+function addresses($value) {
+    $found = [];
+    if (preg_match_all('/<([^<>@\s]+@[^<>@\s]+)>|([^<>@\s,;"]+@[^<>@\s,;"]+)/', $value, $m)) {
+        foreach ($m[0] as $k => $whole) { $found[] = $m[1][$k] !== '' ? $m[1][$k] : $m[2][$k]; }
+    }
+    return $found;
+}
+
+$headers = []; $current = null; $kept = [];
+foreach (explode("\n", $headerText) as $line) {
+    if ($current !== null && ($line !== '' && ($line[0] === ' ' || $line[0] === "\t"))) { $headers[$current] .= "\n" . $line; $kept[count($kept) - 1] .= "\n" . $line; continue; }
+    $pos = strpos($line, ':');
+    if ($pos === false) { $kept[] = $line; $current = null; continue; }
+    $name = strtolower(trim(substr($line, 0, $pos)));
+    $headers[$name] = isset($headers[$name]) ? $headers[$name] . ', ' . trim(substr($line, $pos + 1)) : trim(substr($line, $pos + 1));
+    $current = $name; $kept[] = $line;
+}
+if ($readHeaders) {
+    foreach (['to', 'cc', 'bcc'] as $field) { if (isset($headers[$field])) $recipients = array_merge($recipients, addresses($headers[$field])); }
+    // Bcc never leaves with the message.
+    $kept = array_values(array_filter($kept, function ($l) { return stripos($l, 'bcc:') !== 0; }));
+}
+// PHP's mail() runs sendmail_path with no -t and writes the recipient into a To header, so with no
+// address on the command line the headers are the recipient list.
+if (!$recipients && !$readHeaders) { $readHeaders = true; foreach (['to', 'cc', 'bcc'] as $field) { if (isset($headers[$field])) $recipients = array_merge($recipients, addresses($headers[$field])); } $kept = array_values(array_filter($kept, function ($l) { return stripos($l, 'bcc:') !== 0; })); }
+$recipients = array_values(array_unique(array_filter($recipients, function ($r) { return preg_match('/^[^@\s]+@[^@\s]+$/', $r) === 1; })));
+if (!$recipients) { fwrite(STDERR, "hosting-sendmail: no recipient\n"); exit(67); }
+if ($sender === null || $sender === '') { $from = addresses(isset($headers['from']) ? $headers['from'] : ''); $sender = isset($from[0]) ? $from[0] : null; }
+if ($sender === null || !preg_match('/^[^@\s]+@[^@\s]+$/', $sender)) { fwrite(STDERR, "hosting-sendmail: no sender address; set a From header at one of this site's domains\n"); exit(78); }
+if (!isset($headers['date'])) array_unshift($kept, 'Date: ' . date(DATE_RFC2822));
+if (!isset($headers['message-id'])) array_unshift($kept, 'Message-ID: <' . bin2hex(random_bytes(12)) . '@' . substr($sender, strpos($sender, '@') + 1) . '>');
+$data = implode("\r\n", $kept) . "\r\n\r\n" . str_replace("\n", "\r\n", $body);
+if (substr($data, -2) !== "\r\n") $data .= "\r\n";
+$data = preg_replace('/^\./m', '..', $data);
+
+$socket = @stream_socket_client('tcp://mail:25', $errno, $errstr, 10);
+if (!$socket) { fwrite(STDERR, "hosting-sendmail: relay unreachable ($errstr): mail is off on this server, or the relay is down\n"); exit(75); }
+stream_set_timeout($socket, 60);
+function reply($socket) {
+    $code = null; $text = '';
+    while (($line = fgets($socket, 1024)) !== false) { $text .= $line; if (preg_match('/^(\d{3})([ -])/', $line, $m)) { $code = (int)$m[1]; if ($m[2] === ' ') break; } }
+    return [$code, trim($text)];
+}
+function expect($socket, $command, $wanted, $stage) {
+    if ($command !== '') fwrite($socket, $command . "\r\n");
+    list($code, $text) = reply($socket);
+    if ($code !== $wanted) { fwrite(STDERR, "hosting-sendmail: relay refused at $stage: $text\n"); fclose($socket); exit($code !== null && $code >= 500 ? 77 : 75); }
+}
+expect($socket, '', 220, 'greeting');
+expect($socket, 'EHLO ' . (gethostname() ?: 'site'), 250, 'EHLO');
+expect($socket, 'MAIL FROM:<' . $sender . '>', 250, 'MAIL FROM');
+foreach ($recipients as $r) expect($socket, 'RCPT TO:<' . $r . '>', 250, 'RCPT TO ' . $r);
+expect($socket, 'DATA', 354, 'DATA');
+fwrite($socket, $data . ".\r\n");
+list($code, $text) = reply($socket);
+if ($code !== 250) { fwrite(STDERR, "hosting-sendmail: relay did not accept the message: $text\n"); fclose($socket); exit(75); }
+fwrite($socket, "QUIT\r\n"); fclose($socket);
+exit(0);

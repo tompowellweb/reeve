@@ -1,0 +1,28 @@
+[Unit]
+Description=Private hosting panel web UI
+After=reeve-worker.service srv.mount
+RequiresMountsFor=/srv
+BindsTo=srv.mount
+
+[Service]
+Type=simple
+User=hosting-web
+Group=hosting-web
+WorkingDirectory=/opt/reeve/current
+ExecStart=/opt/reeve/current/.venv/bin/python -m uvicorn reeve.web:app --factory --host 127.0.0.1 --port 8088 --no-proxy-headers --no-access-log
+UMask=0077
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/ops/panel/web
+InaccessiblePaths=/srv/sites /srv/docker /srv/containerd /srv/ops/panel/worker /srv/ops/proxy /run/docker.sock
+CapabilityBoundingSet=
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET
+
+[Install]
+WantedBy=multi-user.target

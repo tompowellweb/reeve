@@ -1,0 +1,13 @@
+{% extends 'base.html' %}{% block title %}Deleted sites · Reeve{% endblock %}{% block content %}
+<a class="breadcrumb" href="/">← Sites</a><h1>Deleted sites</h1>
+{% macro when(value) %}<time data-timestamp="{{value}}">{{value|timestamp}}</time>{% endmacro %}
+<p>Every deletion kept a final complete backup. A deleted site can be restored into a new site from that backup; its old name and hostname are free to reuse if nothing else took them.</p>
+<section class="card">
+{% for d in deleted %}
+<article class="summary-row"><div><strong>{{d.name}}</strong> <span class="badge">{{d.runtime}}</span><small>{{d.domain}} · deleted {{when(d.deleted_at)}}</small>
+{% if d.final_backup %}<small>Final backup {{when(d.final_backup.completed_at)}} · {{(d.final_backup.bytes / 1048576)|round(1)}} MiB · {{d.backups}} backup{{'s' if d.backups != 1}} kept</small><small class="wrap-anywhere">Local path: <code>{{d.final_backup.path}}</code></small>{% else %}<small class="danger-text">No backup of this site remains on this machine.</small>{% endif %}
+</div>{% if d.final_backup %}<div class="row-actions"><button type="button" class="secondary" data-dialog="restore-{{loop.index}}">Restore</button></div>{% endif %}</article>
+{% if d.final_backup %}<dialog id="restore-{{loop.index}}"><div class="dialog-heading"><h2>Restore {{d.name}}</h2><button type="button" class="quiet close-dialog" data-close-dialog aria-label="Close">×</button></div><form method="post" action="/history/restore"><input type="hidden" name="csrf" value="{{session.csrf}}"><input type="hidden" name="snapshot" value="{{d.final_backup.id}}"><label>Site name<input name="name" value="{{d.name}}" required pattern="[a-z][a-z0-9-]{0,30}[a-z0-9]|[a-z]"></label><label>Hostname<input name="domain" value="{{d.domain}}" required></label><p class="compact-note">Creates a new site from the final backup. Stored application URLs are not rewritten.</p><button>Restore</button></form></dialog>{% endif %}
+{% else %}<p class="empty-summary">No sites have been deleted.</p>{% endfor %}
+</section>
+<script defer src="/static/overview.js"></script>{% endblock %}
