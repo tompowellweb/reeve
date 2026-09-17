@@ -77,8 +77,8 @@ applied to the repository as to local copies. The destination and its secrets ar
 the worker's private folder that the Backups page writes; the uploader reads only those files.
 
 Recovery needs the source, the repository and its password, nothing from the old machine: the
-bootstrap script rebuilds the foundation, the installer the release, the Backups page the
-repository access, and the restore script the sites. The measured path is a few minutes.
+installer rebuilds the foundation and the release, the Backups page the repository access, and
+the restore script the sites. The measured path is a few minutes.
 
 ## Updates
 
