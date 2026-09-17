@@ -439,6 +439,12 @@ def run():
                     except Exception:
                         import logging
                         logging.exception('Housekeeping failed; retrying tomorrow')
+                from .updates import due as update_due, check as update_check
+                if update_due():
+                    try: update_check()
+                    except Exception:
+                        import logging
+                        logging.exception('Update check failed; retrying tomorrow')
                 from .traffic import tick as traffic_tick
                 try: traffic_tick(ledger)
                 except Exception:

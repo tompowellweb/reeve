@@ -20,14 +20,16 @@ Nothing else: not the old server's ledger, disk or keys.
 ## Steps
 
 1. **Provision** a Debian 13 machine with an administrator and an empty second disk.
-2. **Bootstrap**, as root, with the source cloned at the commit:
+2. **Install**, as root, with the source cloned and checked out at the release that wrote the
+   backups or a newer one (an older release lacks the restore fixes newer backups depend on):
 
    ```sh
-   sh scripts/bootstrap.sh /dev/vdb /path/to/checkout <commit>
+   git clone https://github.com/tompowellweb/reeve.git && cd reeve && git checkout v1.1.0
+   sudo ./install.py --data-device /dev/vdb
    ```
 
-   The commit must be the one that wrote the backups, or newer: an older release lacks the
-   restore fixes newer backups depend on.
+   The installer formats the empty data disk, installs Docker and the release, and prints the
+   operator password once. About two minutes.
 3. **Connect the repository** on the Backups page, choosing "existing repository password" and
    pasting it. The page probes and pins the destination's host key (compare the fingerprint it
    shows with the recorded one), opens the repository, records its identity, and leaves uploads
@@ -45,17 +47,17 @@ Nothing else: not the old server's ledger, disk or keys.
    A restore gives the site one hostname; when the spec lists aliases the script applies the full
    list afterwards as a domains job. Aliases are never restored by themselves because they belong
    to the old site's identity.
-5. **Verify**: `reeve list` shows every site succeeded and healthy; open each hostname over HTTPS
+5. **Verify**: `reeve site list` shows every site succeeded and healthy; open each hostname over HTTPS
    through the machine's own edge (`curl --resolve <host>:443:127.0.0.1` with the local CA from
    `/srv/ops/proxy/data/caddy/pki/authorities/local/root.crt`); log in to one application.
-6. **Set the operator password**: `reeve set-password`. Point DNS at the machine when it is the
+6. **Set the operator password**: the installer printed one; change it with `reeve password`. Point DNS at the machine when it is the
    real server.
 7. **Turn uploads on** from the Backups page only when this machine owns the repository from now
    on. Two panels uploading to one repository is not supported.
 
 ## What can go wrong
 
-- The bootstrap refuses a data disk with any signature, a mounted `/srv` or an unclean checkout.
+- The installer refuses a data device with any signature and a checkout with uncommitted changes.
   It never formats over data; fix the cause.
 - A missing PHP branch image is built during the site's create (a minute or two); a Compose
   package with a Dockerfile builds it.

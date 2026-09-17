@@ -1,6 +1,6 @@
 #!/bin/sh
 # Restore selected complete site backups from the off-machine restic repository into this fresh
-# panel. Run as root after bootstrap.sh. Repository access must already be in
+# Reeve. Run as root after install.py. Repository access must already be in
 # /srv/ops/panel/worker/remote-backup.json with its private files (restic password, SSH key,
 # pinned known_hosts); this script never prints them.
 #
@@ -42,20 +42,20 @@ root, manifest = sites.snapshot(backup)
 print(json.dumps({'backup': backup, 'site': manifest['site_name'], 'kind': manifest.get('site_kind'), 'bytes': manifest['files']['bytes']}))
 PYEOF
     log "restoring $name ($domain)"
-    reeve site-restore "$backup" --name "$name" --domain "$domain" >/dev/null
+    reeve site restore "$backup" --name "$name" --domain "$domain" >/dev/null
 done
 log "waiting for sites"
 for spec in "$@"; do
     rest=${spec#*=}; name=${rest%%=*}
     for i in $(seq 1 400); do
-        state=$(reeve list | $PY -c "import json,sys; r=[x for x in json.load(sys.stdin) if x['name']=='$name']; print(r[0]['state'] if r else 'missing')")
+        state=$(reeve site list --json | $PY -c "import json,sys; r=[x for x in json.load(sys.stdin) if x['name']=='$name']; print(r[0]['state'] if r else 'missing')")
         case "$state" in succeeded|failed|recovery-needed) break;; esac
         sleep 3
     done
-    phase=$(reeve site-restores "$(reeve list | $PY -c "import json,sys; print(next(x['id'] for x in json.load(sys.stdin) if x['name']=='$name'))")" 2>/dev/null | $PY -c "import json,sys; d=json.load(sys.stdin); print(d[0]['state'] if d else 'none')" || echo none)
+    phase=$(reeve site restores "$name" 2>/dev/null | $PY -c "import json,sys; d=json.load(sys.stdin); print(d[0]['state'] if d else 'none')" || echo none)
     if [ "$phase" != none ]; then
         for i in $(seq 1 400); do
-            phase=$(reeve site-restores "$(reeve list | $PY -c "import json,sys; print(next(x['id'] for x in json.load(sys.stdin) if x['name']=='$name'))")" | $PY -c "import json,sys; print(json.load(sys.stdin)[0]['state'])")
+            phase=$(reeve site restores "$name" | $PY -c "import json,sys; print(json.load(sys.stdin)[0]['state'])")
             case "$phase" in succeeded|failed|recovery-needed) break;; esac
             sleep 3
         done
@@ -63,10 +63,9 @@ for spec in "$@"; do
     log "$name: site $state, restore phase $phase"
     hostnames=${rest#*=}
     if [ "$state" = succeeded ] && [ "$hostnames" != "${hostnames%%,*}" ]; then
-        site=$(reeve list | $PY -c "import json,sys; print(next(x['id'] for x in json.load(sys.stdin) if x['name']=='$name'))")
-        reeve domains "$site" $(printf '%s' "$hostnames" | tr ',' ' ') >/dev/null
+        reeve site domains "$name" $(printf '%s' "$hostnames" | tr ',' ' ') >/dev/null
         for i in $(seq 1 100); do
-            job=$(reeve list | $PY -c "import json,sys; j=next(x for x in json.load(sys.stdin) if x['name']=='$name')['domain_job']; print(j['state'] if j else 'none')")
+            job=$(reeve site list --json | $PY -c "import json,sys; j=next(x for x in json.load(sys.stdin) if x['name']=='$name')['domain_job']; print(j['state'] if j else 'none')")
             case "$job" in succeeded|failed|none) break;; esac
             sleep 3
         done

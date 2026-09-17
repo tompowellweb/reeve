@@ -80,6 +80,10 @@ class Auth:
             db.execute("INSERT INTO failures VALUES (?)", (now,))
             return "Sign-in failed. Check the operator password."
 
+    def has_password(self):
+        with self.db() as db:
+            return db.execute("SELECT 1 FROM operator WHERE id=1").fetchone() is not None
+
     def set_password(self, password):
         if not 14 <= len(password) <= 1024:
             raise ValueError("Use a password of 14–1024 characters")

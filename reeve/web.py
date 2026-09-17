@@ -267,7 +267,7 @@ def create_app(auth_path="/srv/ops/panel/web/auth.sqlite3", call=rpc, status_pat
         from datetime import datetime, timezone
         info = call({"op": "versions"})
         checked = datetime.fromtimestamp(info["checked_at"], timezone.utc).strftime("%Y-%m-%d %H:%M UTC") if info.get("checked_at") else "Not checked"
-        return render(request, "versions.html", versions=info, checked=checked, ident=str(uuid.uuid4()))
+        return render(request, "versions.html", update=(read_status(status_path) or {}).get("update"), versions=info, checked=checked, ident=str(uuid.uuid4()))
 
     @app.post("/versions/refresh")
     async def refresh_versions(request: Request):

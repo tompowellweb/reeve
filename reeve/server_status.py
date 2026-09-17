@@ -181,6 +181,8 @@ def summary(ledger, host, now=None):
         except Exception as exc:
             result[name] = None; result['errors'][name] = str(exc)[:300]
     part('profile', profile_settings)
+    from .updates import installed, state as update_state
+    part('update', lambda: {**installed(), **(update_state() or {})})
     part('cpu', cpu)
     part('memory', memory)
     def disk():

@@ -30,11 +30,11 @@ closed page does not cancel it, and a failed or interrupted setup offers **Retry
 reuses the same identity, quota and content.
 
 ```sh
-reeve create example example.com --alias www.example.com
-reeve create legacy legacy.example.com --runtime php --php-version 7.0 --memory-mb 256
-reeve create shop shop.example.com --runtime php --php-version 8.4 --database mariadb
-reeve list
-reeve retry <request uuid>
+reeve site create example example.com --alias www.example.com
+reeve site create legacy legacy.example.com --runtime php --php-version 7.0 --memory-mb 256
+reeve site create shop shop.example.com --runtime php --php-version 8.4 --database mariadb
+reeve site list
+reeve site retry example
 ```
 
 Each site gets a numeric identity from 30000 and an XFS project from 100000; its files live
@@ -60,8 +60,8 @@ container is recreated, the site's names are verified over HTTPS, and any failur
 previous rules with nginx's message in the job output. Backups carry the rules.
 
 ```sh
-reeve domains <site uuid> example.com www.example.com
-reeve retry-domains <change uuid>
+reeve site domains example example.com www.example.com
+reeve site retry example
 ```
 
 ### PHP
@@ -82,9 +82,9 @@ The pool runs on demand: an idle PHP site holds one master process. The number o
 profile's (8 on standard, 3 on small) or, for a memory-capped site, derived from the cap.
 
 ```sh
-reeve php-switch <site uuid> 8.3
-reeve php-rollback <site uuid> <previous change uuid>
-reeve versions
+reeve php switch shop 8.3
+reeve php rollback shop
+reeve php versions
 ```
 
 ### Databases
@@ -105,9 +105,10 @@ A PHP 7.0 or 7.1 site with MySQL gets a native-password application user and mus
 series or MariaDB, because that PHP generation cannot speak MySQL 8's default authentication.
 
 ```sh
-reeve add-database <site uuid> mariadb --series 11.8
-reeve database-credentials <site uuid>   # prints the secret; private terminal only
-reeve database-versions
+reeve db add shop mariadb --series 11.8
+reeve db usage shop light
+reeve db credentials shop   # prints the secret; private terminal only
+reeve db versions
 ```
 
 ### Files and tools
@@ -158,8 +159,8 @@ SPF record to publish. Deliverability beyond SPF, such as DKIM or a paid relay, 
 owner's choice; `relay` mode carries it for every site at once.
 
 ```sh
-reeve mail-setup     # after changing mail settings
-reeve mail-status
+reeve mail setup     # after changing mail settings
+reeve mail status
 ```
 
 ## Backups
@@ -196,11 +197,12 @@ content plus a dump; a MySQL dump must be a plain single-database export). **Del
 a final backup and keeps it; **History** lists deleted sites and restores them.
 
 ```sh
-reeve site-backup <site uuid>
-reeve site-backups <site uuid>
-reeve site-restore <backup uuid> --name new-name --domain new.example.com
-reeve backup-database <site uuid>
-reeve backup-status <site uuid>
+reeve site backup shop
+reeve site backups shop
+reeve site restore <backup uuid> --name new-name --domain new.example.com
+reeve backup status
+reeve backup copy
+reeve backup schedule shop --interval 60
 ```
 
 ## Compose applications
@@ -220,6 +222,11 @@ scope.
 
 ## Updates and logs
 
+- **Reeve itself: shown, never applied unasked.** Once a day the worker lists the repository's
+  releases; when a newer one exists the home page and the PHP page say so. `sudo reeve update`
+  installs it (or `--to 1.2.0` a named one) with the installer's schema check and rollback; the
+  footer shows the running and previous versions. `sudo reeve update --check` asks now.
+
 - **PHP patch releases within a branch: automatic.** Every `updates.every_days` at
   `updates.hour` the worker rebuilds each branch image with fresh packages, keeps an unchanged
   branch, replaces a changed one (the previous image kept), and rolls each site onto it one at a
@@ -232,8 +239,8 @@ scope.
   journal by its cap, and the panel's own outputs by a daily housekeeping pass.
 
 ```sh
-reeve php-rebuild
-reeve housekeeping
+reeve php rebuild
+reeve doctor
 ```
 
 ## Traffic
@@ -264,11 +271,12 @@ how many sites a box hosts; a small box is expected to host a few.
   `docker compose -f /srv/sites/<name>/compose.yml ps` the containers.
 - **The quota is full.** Use the shell tool without outgoing network to remove content; the hard
   limit stays enforced. Do not raise a quota silently.
-- **The edge lost a route.** `reeve edge-setup` rebuilds the edge from the recorded routes, and
-  the worker reconciles the edge's configuration with the release's at every start.
+- **The edge lost a route.** `reeve doctor --repair` rebuilds the edge from the recorded routes,
+  and the worker reconciles the edge's configuration with the release's at every start.
 
 ```sh
-reeve preflight
+reeve doctor
+reeve status
 journalctl -u reeve-worker -u reeve-web -n 100 --no-pager
 xfs_quota -x -c 'report -p -n -h' /srv
 ```

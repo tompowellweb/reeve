@@ -18,12 +18,14 @@ named disposable fixtures. They are tooling, not the suite.
 
 ## Delivering a change
 
-1. Commit and push. The installer takes a commit, never a working copy.
-2. On the server: `git pull --ff-only`, then
-   `sudo python3 install.py --commit <full hash>`.
+1. Commit and push; tag a release as `vX.Y.Z` when it is one. The installer installs what is
+   checked out and records the tag, or the version plus commit between tags; a dirty tree needs
+   `--allow-modified` and shows as modified.
+2. On a server: `git pull --ff-only` in the clone, then `sudo ./install.py`; or `sudo reeve
+   update` once the release is tagged and pushed, which does the same from the panel's own clone.
 3. The installer refuses a release whose worker cannot read the current ledger schema and keeps
-   the previous release under `/opt/reeve/releases/` for rollback: check out the previous commit
-   and install it. Rollback does not rewind content or job history.
+   the previous release under `/opt/reeve/releases/` for rollback: `sudo reeve update --to
+   <previous version>`. Rollback does not rewind content or job history.
 
 A schema change bumps the ledger's version list in `config/capabilities.json` and the checks in
 `reeve/core.py` and `install.py`, and says in its commit which older releases stop being rollback
@@ -52,5 +54,6 @@ targets. An additive table (traffic, remote copies) needs no bump: older workers
   module per feature, `templates/` and `static/`.
 - `templates/`: Containerfiles and scripts for the PHP images, toolboxes, content tools and mail.
 - `systemd/`: the three units and the timer. `config/`: the capabilities record and the settings
-  example. `scripts/`: bootstrap and restore for a clean machine. `install.py`: the installer.
+  example. `scripts/restore-sites.sh`: the recovery restore. `install.py`: the installer, with
+  `reeve/setup.py` for the steps it runs inside the release.
 - `tests/`: the suite and the acceptance tooling.

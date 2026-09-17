@@ -414,7 +414,7 @@ def test_header_navigation_marks_the_section_and_the_footer_names_the_release(tm
     assert "<title>Sign in · Reeve</title>" in page.text and 'class="top-nav"' not in page.text  # no sections before signing in
     page = login(client)
     assert 'class="brand" href="/">Reeve <span>Panel</span>' in page.text and 'href="/" aria-current="page">Sites' in page.text and 'href="/mail">Mail' in page.text
-    assert "Reeve Panel · release 7e4a3c7, previous f9fde5d · on hosting" in page.text and "Backup destination</a> · " not in page.text
+    assert "Reeve Panel · 7e4a3c7, previous f9fde5d · on hosting" in page.text and "Backup destination</a> · " not in page.text
     assert '<p class="eyebrow">hosting</p>' in page.text
     for path, label in (("/sites/shop", "Sites"), ("/mail", "Mail"), ("/backups", "Backups"), ("/versions", "PHP"), ("/databases/versions", "Databases"), ("/history", "History")):
         text = client.get(path).text
