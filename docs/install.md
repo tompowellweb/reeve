@@ -8,10 +8,12 @@ already has an XFS data filesystem and Docker. The same steps begin [recovery](r
 - Debian 13 (trixie), amd64, an administrator with sudo, network access to the Debian and Docker
   package repositories and to Docker Hub. 2 GB of memory is the floor; the server profile
   (below) fits the defaults to the box.
-- Somewhere for the data: either an XFS filesystem with project quotas already mounted at
-  `/srv`, or an empty disk or partition the installer may format. Reeve never formats anything
-  that carries a signature and never partitions; carve a partition from free space with `fdisk`
-  first if that is where the data must go.
+- Somewhere for the data: a filesystem mounted at `/srv`, or an empty disk or partition the
+  installer may format. An XFS `/srv` is adopted; one without project quotas gets the `prjquota`
+  mount option added and is remounted (the installer asks for a reboot when it is busy); an
+  empty non-XFS `/srv` is formatted as XFS after you say yes. Reeve never formats a filesystem
+  that holds data or a device that carries a signature, and never partitions; carve a partition
+  from free space with `fdisk` first if that is where the data must go.
 
 ## Install
 
@@ -19,20 +21,21 @@ From the repository (a Debian cloud image has no git; the first line adds it):
 
 ```sh
 sudo apt-get install -y git
-git clone https://github.com/tompowellweb/reeve.git && cd reeve && git checkout v1.1.3
+git clone https://github.com/tompowellweb/reeve.git && cd reeve && git checkout v1.1.4
 sudo python3 install.py --data-device /dev/vdb
 ```
 
 Or from a release tarball, with nothing but curl:
 
 ```sh
-curl -fsSL https://github.com/tompowellweb/reeve/archive/refs/tags/v1.1.3.tar.gz | tar xz
-cd reeve-1.1.3
+curl -fsSL https://github.com/tompowellweb/reeve/archive/refs/tags/v1.1.4.tar.gz | tar xz
+cd reeve-1.1.4
 sudo python3 install.py --data-device /dev/vdb
 ```
 
-Leave out `--data-device` when `/srv` is already mounted as XFS with project quotas: the
-installer adopts it. It then adopts Docker if it is installed as rootful overlay2 under
+Leave out `--data-device` when something is already mounted at `/srv`: the installer adopts
+an XFS filesystem, amends one without project quotas, or offers to format an empty non-XFS one
+(`--format-data` says yes without a terminal). It then adopts Docker if it is installed as rootful overlay2 under
 `/srv/docker`, or installs it with the daemon and containerd settings, the quota projects and a
 journal cap; installs the checked-out tree as a release under `/opt/reeve/releases/<commit>`
 with hash-locked Python dependencies; creates the `hosting-web` account, the settings file, the

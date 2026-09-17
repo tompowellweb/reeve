@@ -5,9 +5,12 @@
 
 The installer adopts what exists and builds what is missing:
 
-- A quota-enabled XFS filesystem mounted at /srv is adopted. Without one, --data-device names
-  an empty disk or partition that is formatted as XFS with project quotas, added to fstab and
-  mounted. Anything carrying a signature is refused; the installer never partitions.
+- A quota-enabled XFS filesystem mounted at /srv is adopted. An XFS /srv without project quotas
+  gets prjquota added to its mount options and is remounted (or asks for a reboot when busy). An
+  empty non-XFS /srv is formatted as XFS with the operator's yes (--format-data without a
+  terminal). Without a mount, --data-device names an empty disk or partition that is formatted,
+  added to fstab and mounted. Anything carrying a signature is refused; the installer never
+  partitions.
 - Rootful Docker with overlay2 under /srv/docker is adopted. Without Docker, it is installed with
   the daemon and containerd settings, the quota projects and the journal cap.
 - The checked-out tree becomes a release under /opt/reeve/releases/<commit>, its tag (or version
@@ -54,22 +57,60 @@ def say(text):
 
 # ---- the data filesystem
 
-def plan_data(mount, device):
-    """Pure decision: adopt a mounted quota-enabled XFS /srv, format the named device, or stop with advice."""
+def plan_data(mount, device, empty=False):
+    """Pure decision about /srv: adopt it, amend its mount options, format what is mounted there (if empty),
+    format the named device, or stop with advice."""
     if mount:
-        if mount.get("fstype") != "xfs" or not ({"prjquota", "pquota"} & set(mount.get("options", "").split(","))):
-            raise SystemExit("/srv is mounted but is not XFS with project quotas (mount option prjquota). Reeve needs that for site quotas.")
-        return "adopt"
+        options = set(mount.get("options", "").split(","))
+        if mount.get("fstype") == "xfs":
+            return "adopt" if {"prjquota", "pquota"} & options else "amend"
+        if empty: return "format-mounted"
+        raise SystemExit(f"/srv is mounted from {mount.get('source')} as {mount.get('fstype')}, which cannot carry XFS project quotas, "
+                         "and it holds data. Move the data away and run the installer again (it will offer to format it), "
+                         "or mount an XFS filesystem at /srv, or pass --data-device with an empty disk or partition.")
     if not device:
-        raise SystemExit("Nothing is mounted at /srv. Either mount an XFS filesystem there with the prjquota option, "
-                         "or pass --data-device with an empty disk or partition for the installer to format "
-                         "(carve one from free space with fdisk first).")
+        raise SystemExit("Nothing is mounted at /srv. Either mount an XFS filesystem there, or pass --data-device with an empty "
+                         "disk or partition for the installer to format (carve one from free space with fdisk first).")
     return "format"
 
 
 def mounted(path):
     result = subprocess.run(["findmnt", "-J", "-M", path], capture_output=True, text=True)
     return json.loads(result.stdout)["filesystems"][0] if result.returncode == 0 and result.stdout.strip() else None
+
+
+def amend_fstab(text, mountpoint, source, fstype="xfs", options="defaults,prjquota"):
+    """Pure: the fstab text with the entry for the mountpoint carrying the type and options, added when absent."""
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        fields = line.split()
+        if line.strip().startswith("#") or len(fields) < 4 or fields[1] != mountpoint: continue
+        current = [o for o in fields[3].split(",") if o not in ("prjquota", "pquota")]
+        fields[0] = source
+        fields[2] = fstype
+        fields[3] = ",".join([*current, "prjquota"]) if fstype == "xfs" else fields[3]
+        lines[index] = "  ".join(fields[:4] + (fields[4:] or ["0", "0"]))
+        return "\n".join(lines) + "\n"
+    return text.rstrip("\n") + f"\n# Reeve data: XFS with hard project quotas.\n{source} {mountpoint} {fstype} {options} 0 0\n"
+
+
+def write_fstab(source, fstype="xfs"):
+    fstab = Path("/etc/fstab")
+    fstab.write_text(amend_fstab(fstab.read_text(), "/srv", source, fstype))
+    run("systemctl", "daemon-reload")
+
+
+def uuid_source(device):
+    return "UUID=" + run("blkid", "-s", "UUID", "-o", "value", device)
+
+
+def remount_srv():
+    """A quota option cannot be added to a mounted XFS: unmount and mount again, or ask for a reboot when it is busy."""
+    result = subprocess.run(["umount", "/srv"], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise SystemExit("/srv is busy, so its new mount options cannot take effect now. They are in /etc/fstab: "
+                         "reboot, then run the installer again.")
+    run("mount", "/srv")
 
 
 def format_device(device):
@@ -85,23 +126,48 @@ def format_device(device):
         raise SystemExit("/srv exists and is not empty; move its contents away before the installer mounts the data filesystem there")
     say(f"Formatting {device} as XFS with project quotas")
     run("mkfs.xfs", "-q", "-L", "reeve-srv", device)
-    uuid = run("blkid", "-s", "UUID", "-o", "value", device)
-    fstab = Path("/etc/fstab")
-    fstab.write_text(fstab.read_text() + f"\n# Reeve data: XFS with hard project quotas.\nUUID={uuid} /srv xfs defaults,prjquota 0 0\n")
-    run("systemctl", "daemon-reload")
+    write_fstab(uuid_source(device))
     srv.mkdir(mode=0o755, exist_ok=True)
     run("mount", "/srv")
 
 
-def data_filesystem(device):
-    if plan_data(mounted("/srv"), device) == "format":
-        format_device(device)
+def confirm(question, assume_yes):
+    if assume_yes: return True
+    if not sys.stdin.isatty(): raise SystemExit(question + " Pass --format-data to say yes without a terminal.")
+    return input(question + " [yes/no] ").strip().lower() in ("y", "yes")
+
+
+def format_mounted(mount, assume_yes):
+    """What is mounted at /srv is empty and not XFS: with the operator's yes, it becomes XFS with quotas."""
+    source = mount["source"]
+    if not confirm(f"/srv is {mount['fstype']} on {source} and empty. Format it as XFS with project quotas? Everything on it is lost.", assume_yes):
+        raise SystemExit("Not formatted. Mount an XFS filesystem at /srv or pass --data-device.")
+    run("umount", "/srv")
+    say(f"Formatting {source} as XFS with project quotas")
+    run("mkfs.xfs", "-q", "-f", "-L", "reeve-srv", source)
+    write_fstab(uuid_source(source))
+    run("mount", "/srv")
+
+
+def data_filesystem(device, assume_yes=False):
+    mount = mounted("/srv")
+    empty = not any(Path("/srv").iterdir()) if mount else False
+    if mount and mount.get("fstype") != "xfs" and not empty:
+        # lost+found alone is an empty ext filesystem
+        empty = [p.name for p in Path("/srv").iterdir()] == ["lost+found"]
+    plan = plan_data(mount, device, empty)
+    if plan == "format": format_device(device)
+    elif plan == "format-mounted": format_mounted(mount, assume_yes)
+    elif plan == "amend":
+        say(f"/srv is XFS on {mount['source']} without project quotas: adding prjquota to its mount options")
+        write_fstab(mount["source"] if mount["source"].startswith(("UUID=", "LABEL=")) else uuid_source(mount["source"]))
+        remount_srv()
     for name, mode in (("/srv/ops", 0o755), ("/srv/sites", 0o755)):
         Path(name).mkdir(mode=mode, exist_ok=True)
     state = run("xfs_quota", "-x", "-c", "state -p", "/srv")
     if "Enforcement: ON" not in state:
-        raise SystemExit("XFS project quota enforcement is off on /srv; mount it with the prjquota option")
-    say("Data filesystem: /srv (XFS, project quotas)")
+        raise SystemExit("XFS project quota enforcement is off on /srv although it is mounted with prjquota; check dmesg and the mount")
+    say("Data filesystem: /srv (XFS, project quotas" + (", adopted" if plan == "adopt" else "") + ")")
 
 
 # ---- Docker
@@ -349,6 +415,7 @@ def first_password(python, release):
 def main():
     parser = argparse.ArgumentParser(description="Install or update Reeve from this checkout.")
     parser.add_argument("--data-device", help="an empty disk or partition to format as the XFS data filesystem when /srv is not mounted")
+    parser.add_argument("--format-data", action="store_true", help="say yes to formatting an empty non-XFS filesystem mounted at /srv")
     parser.add_argument("--commit", help="install this commit from the history instead of the checked-out tree")
     parser.add_argument("--allow-modified", action="store_true", help="install the working tree even with uncommitted changes, as a modified release")
     args = parser.parse_args()
@@ -367,7 +434,7 @@ def main():
     if missing:
         say("Installing packages: " + " ".join(missing))
         run("apt-get", "update", "-qq"); run("apt-get", "install", "-y", "-qq", "--no-install-recommends", *missing)
-    data_filesystem(args.data_device)
+    data_filesystem(args.data_device, args.format_data)
     docker_engine()
     daemon_setting("userland-proxy", False)
     commit, version, modified, archive, changed = tree(source, args.commit, args.allow_modified)

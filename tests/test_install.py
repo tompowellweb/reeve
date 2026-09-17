@@ -9,13 +9,26 @@ spec = importlib.util.spec_from_file_location('installer', Path(__file__).resolv
 installer = importlib.util.module_from_spec(spec); spec.loader.exec_module(installer)
 
 
-def test_the_data_filesystem_decision_adopts_formats_or_advises():
+def test_the_data_filesystem_decision_adopts_amends_formats_or_advises():
     assert installer.plan_data({'fstype': 'xfs', 'options': 'rw,relatime,prjquota'}, None) == 'adopt'
     assert installer.plan_data({'fstype': 'xfs', 'options': 'rw,pquota'}, '/dev/vdb') == 'adopt'  # a mounted /srv wins over a device
+    assert installer.plan_data({'fstype': 'xfs', 'options': 'rw,relatime'}, None) == 'amend'  # XFS without quotas: add the option
+    assert installer.plan_data({'fstype': 'ext4', 'options': 'rw', 'source': '/dev/vdb'}, None, empty=True) == 'format-mounted'
     assert installer.plan_data(None, '/dev/vdb') == 'format'
-    with pytest.raises(SystemExit, match='prjquota'): installer.plan_data({'fstype': 'ext4', 'options': 'rw'}, None)
-    with pytest.raises(SystemExit, match='not XFS with project quotas'): installer.plan_data({'fstype': 'xfs', 'options': 'rw,relatime'}, None)
+    with pytest.raises(SystemExit, match='holds data'): installer.plan_data({'fstype': 'ext4', 'options': 'rw', 'source': '/dev/vdb'}, None, empty=False)
     with pytest.raises(SystemExit, match='--data-device'): installer.plan_data(None, None)
+
+
+def test_fstab_is_amended_in_place_or_extended():
+    text = "UUID=root / ext4 errors=remount-ro 0 1\nUUID=abc /srv xfs defaults 0 0\n"
+    amended = installer.amend_fstab(text, '/srv', 'UUID=abc')
+    assert amended.splitlines()[1].split() == ['UUID=abc', '/srv', 'xfs', 'defaults,prjquota', '0', '0'] and amended.splitlines()[0] == text.splitlines()[0]
+    assert installer.amend_fstab(amended, '/srv', 'UUID=abc') == amended  # once is enough
+    text = "UUID=root / ext4 errors=remount-ro 0 1\nUUID=old /srv ext4 defaults 0 2\n"
+    assert installer.amend_fstab(text, '/srv', 'UUID=new').splitlines()[1].split() == ['UUID=new', '/srv', 'xfs', 'defaults,prjquota', '0', '2']
+    absent = "UUID=root / ext4 errors=remount-ro 0 1\n"
+    assert installer.amend_fstab(absent, '/srv', 'UUID=abc').splitlines()[-1] == 'UUID=abc /srv xfs defaults,prjquota 0 0'
+    assert '# Reeve data' in installer.amend_fstab(absent, '/srv', 'UUID=abc')
 
 
 def test_the_tree_is_the_commit_with_its_tag_or_version_and_refuses_uncommitted_changes(tmp_path):

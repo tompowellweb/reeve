@@ -25,7 +25,7 @@ Nothing else: not the old server's ledger, disk or keys.
 
    ```sh
    sudo apt-get install -y git
-   git clone https://github.com/tompowellweb/reeve.git && cd reeve && git checkout v1.1.3
+   git clone https://github.com/tompowellweb/reeve.git && cd reeve && git checkout v1.1.4
    sudo python3 install.py --data-device /dev/vdb
    ```
 
