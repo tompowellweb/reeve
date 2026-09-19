@@ -233,6 +233,8 @@ def create_app(auth_path="/srv/ops/panel/web/auth.sqlite3", call=rpc, status_pat
         extra['backup_ident'] = str(uuid.uuid4()); extra['delete_ident'] = str(uuid.uuid4()); extra['usage_ident'] = str(uuid.uuid4())
         try: extra['traffic'] = call({'op': 'site-traffic', 'site_id': row['id']})
         except (ValueError, OSError): extra['traffic'] = None
+        from .certificates import status as certificate_status
+        extra['certificates'] = {name: certificate_status(name) for name in (row.get('domains') or [row['domain']])}
         try:
             extra['deletion'] = (call({'op': 'site-deletes', 'site_id': row['id']}) or [None])[0]
             extra['restore_job'] = (call({'op': 'site-restores', 'site_id': row['id']}) or [None])[0]

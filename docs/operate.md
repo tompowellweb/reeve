@@ -42,8 +42,9 @@ using **Retry setup**. Site content lives at `/srv/sites/<name>/html`.
 ![The database usage dialog](images/dialog-database-usage.png)
 
 **Domains** replaces the complete hostname list; put the primary name first and include
-every alias you want to keep. **Site rules** accepts nginx redirects and routing rules;
-Reeve checks the configuration before applying it.
+every alias you want to keep. The names and the edge's routes change at once; certificates
+follow, and the section shows each name's certificate and what it resolves to. **Site rules**
+accepts nginx redirects and routing rules; Reeve checks the configuration before applying it.
 
 ```sh
 sudo reeve site domains shop shop.example.com www.shop.example.com

@@ -428,13 +428,15 @@ class Host:
         self.verify_domains(domains)
 
     def verify_domains(self, domains):
-        # With the edge's own CA the check trusts that CA; with public certificates it trusts the system's.
-        trust = [] if tls_settings()['mode'] == 'public' else ["--cacert", PROXY / "data/caddy/pki/authorities/local/root.crt"]
+        # The loopback check trusts the system CAs and the edge's own CA together: a name whose public
+        # certificate is not issued yet is served with an internal one (see render_routes).
         for domain in domains:
-            command(["curl", "--noproxy", "*", "--fail", "--silent", "--show-error", "--retry", "5", "--retry-all-errors", *trust,
-                     "--resolve", f"{domain}:443:127.0.0.1", f"https://{domain}/__hosting_health"], timeout=45)
+            command(["curl", "--noproxy", "*", "--fail", "--silent", "--show-error", "--retry", "5", "--retry-all-errors",
+                     "--cacert", trust_bundle(), "--resolve", f"{domain}:443:127.0.0.1", f"https://{domain}/__hosting_health"], timeout=45)
 
     def change_domains(self, row, domains):
+        """The names and the edge's routes: what a domain change is. The site's record changes as soon as this
+        returns; certificates and the containers' own view of the names follow in settle_domains."""
         if json.loads(row["payload"]).get("runtime") == "compose":
             from .compose_adopt import change_domains
             return change_domains(self, row, domains)
@@ -449,12 +451,22 @@ class Host:
         if self.health(row)["application"] != "healthy":
             raise RuntimeError("Site must be healthy before publishing a domain change")
         self.publish(row, "hosting-ingress-" + row["name"], domains)
-        self.verify_domains(domains)
-        if metadata.get('web_settings'):
-            from .requests_site import apply
-            apply(self,row,metadata['web_settings']['profile'],domains=domains,publish=False)
         metadata.update(domain=domains[0], aliases=domains[1:])
         atomic(root / "hosting.yaml", yaml.safe_dump(metadata))
+
+    def settle_domains(self, row, domains):
+        """After the names changed: a managed PHP site with a routing profile learns its new names (loopback
+        hosts, nginx), and every site is checked through the edge. A failure here is a note on the change, never
+        a reason to undo it."""
+        if json.loads(row["payload"]).get("runtime") == "compose":
+            from .compose_adopt import verify_https
+            return verify_https(domains)
+        metadata = yaml.safe_load((SITES / row["name"] / "hosting.yaml").read_text())
+        if metadata.get('web_settings'):
+            from .requests_site import apply
+            apply(self, row, metadata['web_settings']['profile'], domains=domains, publish=False)
+        else:
+            self.verify_domains(domains)
 
     def unpublish(self, row):
         return unpublish(self, row)
@@ -551,14 +563,33 @@ def unpublish(host, row):
     write_edge_compose(host.config, remaining)
 
 
+def trust_bundle():
+    """The file a loopback check trusts: the system CAs plus the edge's own CA, refreshed when either changes."""
+    parts = []
+    for path in (Path("/etc/ssl/certs/ca-certificates.crt"), PROXY / "data/caddy/pki/authorities/local/root.crt"):
+        try: parts.append(path.read_text())
+        except OSError: pass
+    bundle = OPS / "panel/worker/ca-bundle.crt"
+    text = "\n".join(parts)
+    try: current = bundle.read_text()
+    except OSError: current = None
+    if current != text:
+        bundle.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        tmp = bundle.with_name(".ca-bundle.new")
+        tmp.write_text(text); tmp.chmod(0o600); tmp.replace(bundle)
+    return str(bundle)
+
+
 def render_routes(routes, tls=None):
     """The edge's Caddyfile: one site block per hostname. With `tls.mode: internal` each block takes the
-    edge's own CA; with `public` the block has no tls line and Caddy obtains a public certificate for
-    the name, using the contact email in the global block."""
+    edge's own CA. With `public` Caddy asks Let's Encrypt for the name (the contact email is in the global
+    block) and, until that succeeds (DNS not pointing here yet, port 80 unreachable), serves the edge's own
+    certificate instead, so the site and its checks work and the panel can show which kind each name has.
+    Caddy tries the public issuer again at every renewal."""
     tls = tls or tls_settings()
     contact = f" email {tls['email']}\n" if tls['mode'] == 'public' and tls['email'] else ''
     text = '{\n skip_install_trust\n' + contact + ' servers {\n  protocols h1 h2\n }\n}\nhttp:// {\n respond "server is up" 200\n}\n'
-    per_site = ' tls internal\n' if tls['mode'] == 'internal' else ''
+    per_site = ' tls internal\n' if tls['mode'] == 'internal' else ' tls {\n  issuer acme\n  issuer internal\n }\n'
     for domain, item in sorted(routes.items()):
         # One rolling JSON access log per hostname under the edge's own data: 20 MiB × 5 files, 30 days,
         # the input for fail2ban and for reading what a site received. Caddy's process log stays on stdout.

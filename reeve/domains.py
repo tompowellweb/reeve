@@ -69,6 +69,11 @@ class DomainLedger:
                 db.execute("INSERT INTO site_domains VALUES (?,?,1)", (domain, job["site_id"]))
             db.execute("UPDATE domain_jobs SET state='succeeded',error='',updated=? WHERE id=?", (time.time(), job["id"]))
 
+    def note_domains(self, ident, note):
+        """A remark on a change that succeeded: the record stands, the operator reads why the site may not answer yet."""
+        with self.db() as db:
+            db.execute("UPDATE domain_jobs SET error=?, updated=? WHERE id=? AND state='succeeded'", (note[:2000], time.time(), ident))
+
     def retry_domains(self, ident):
         from .core import request_id
         request_id(ident)

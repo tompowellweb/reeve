@@ -30,3 +30,5 @@ textarea{display:block;width:100%;font:inherit;padding:12px;margin-top:8px;borde
 /* Masthead: brand and the section navigation together; sign out on the right. */
 .masthead{display:flex;align-items:center;gap:26px;min-width:0}.top-nav{display:flex;gap:2px;flex-wrap:wrap}.top-nav a{padding:8px 11px;text-decoration:none;font-size:14px;color:#3a5548;border-radius:5px}.top-nav a:hover{background:#eaf0ea}.top-nav a[aria-current=page]{color:#174e3d;background:#e3ede6;font-weight:650}@media(max-width:650px){header{flex-wrap:wrap;gap:8px}.masthead{flex-wrap:wrap;gap:10px}.top-nav a{padding:6px 9px;font-size:13px}}
 .concern-actions{justify-content:flex-end;margin:12px 0}
+
+.domain-list li{flex-wrap:wrap}.domain-list .certificate{flex-basis:100%;font-size:12px;line-height:1.45;color:#5e7266;margin-top:2px}.domain-list .certificate[data-state=internal],.domain-list .certificate[data-state=none]{color:#80571f}

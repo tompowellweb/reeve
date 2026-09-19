@@ -75,7 +75,9 @@ def cli_access(args,root):
     for domain in [meta['domain'],*meta.get('aliases',[])]: args.extend(['--add-host',domain+':host-gateway'])
 
 
-def deploy(host,row,compose,nginx):
+def deploy(host,row,compose,nginx,domain):
+    """Write the files, recreate php and web, then check the site answers on `domain`: the name the edge routes
+    now, which during a domain change is the new primary, not the one still recorded in hosting.yaml."""
     root=SITES/row['name']
     atomic(root/'conf/nginx.conf',nginx,0o644)
     atomic(root/'compose.yml',yaml.safe_dump(compose))
@@ -83,7 +85,7 @@ def deploy(host,row,compose,nginx):
     for name in ('php','web'):
         service=compose['services'][name]
         if service.get('pids_limit')==-1: command(['docker','update','--pids-limit','-1',service['container_name']])
-    host.verify_domains([yaml.safe_load((root/'hosting.yaml').read_text())['domain']])
+    host.verify_domains([domain])
 
 
 def rollback(host,row,ident):
@@ -91,7 +93,7 @@ def rollback(host,row,ident):
     if not path.exists(): return
     trusted(path); old=json.loads(path.read_text())
     if old['site_id']!=row['id']: raise ValueError('Web settings recovery belongs to another site')
-    deploy(host,row,old['compose'],old['nginx'])
+    deploy(host,row,old['compose'],old['nginx'],old['metadata']['domain'])
     atomic(SITES/row['name']/'hosting.yaml',yaml.safe_dump(old['metadata']))
 
 
@@ -134,12 +136,12 @@ def apply(host,row,profile,ident=None,domains=None,publish=True):
     php['networks']['egress']={}; updated['networks']['egress']={'external':True,'name':egress}
     php['extra_hosts']={name:'host-gateway' for name in names}
     try:
-        deploy(host,row,updated,nginx)
+        deploy(host,row,updated,nginx,names[0])
         meta.update(web_settings={'version':1,'profile':profile,'trusted_ingress':cidr},domain=names[0],aliases=names[1:])
         atomic(root/'hosting.yaml',yaml.safe_dump(meta))
     except Exception:
         try:
-            deploy(host,row,prior['compose'],prior['nginx'])
+            deploy(host,row,prior['compose'],prior['nginx'],names[0])
             atomic(root/'hosting.yaml',yaml.safe_dump(prior['metadata']))
         except Exception as recovery:
             raise WebRecoveryFailed('Web settings rollback needs review: '+str(recovery)) from None

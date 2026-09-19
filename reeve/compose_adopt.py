@@ -330,9 +330,10 @@ def http_ready(url, host, timeout=120):
 
 
 def verify_https(domains):
+    from .host import trust_bundle
     for domain in validate_domains(domains):
         ci.run(['curl', '--noproxy', '*', '--fail', '--silent', '--show-error', '--max-time', '10',
-            '--cacert', str(PROXY / 'data/caddy/pki/authorities/local/root.crt'), '--resolve', domain + ':443:127.0.0.1',
+            '--cacert', trust_bundle(), '--resolve', domain + ':443:127.0.0.1',
             'https://' + domain + '/'], raw=True)
 
 
@@ -368,6 +369,5 @@ def change_domains(host, row, domains):
     verify_runtime(row, plan)
     host.publish(row, 'hosting-ingress-' + row['name'], domains,
         upstream='web-' + row['name'] + ':' + str(plan['route']['internal_port']))
-    verify_https(domains)
     plan['route'].update(domain=domains[0], aliases=domains[1:])
     save(row, plan)

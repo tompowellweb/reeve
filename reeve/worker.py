@@ -475,12 +475,19 @@ def run():
                 try:
                     host.change_domains(ledger.get(job["site_id"]), json.loads(job["payload"]))
                     ledger.finish_domains(job)
-                    changed = ledger.get(job["site_id"])
+                except Exception as exc:
+                    ledger.update_domains(job["id"], "recovery-needed", str(exc))
+                    continue
+                # The names and routes are changed and recorded. What follows informs the site of them and checks
+                # it answers; a failure is a note on the change, shown with the certificate status, never a rollback.
+                changed = ledger.get(job["site_id"])
+                try:
+                    host.settle_domains(changed, json.loads(job["payload"]))
                     if json.loads(changed["payload"]).get("runtime") == "php":
                         from .mail import attach as attach_mail
                         attach_mail(host, changed, ledger.domains(changed))
                 except Exception as exc:
-                    ledger.update_domains(job["id"], "recovery-needed", str(exc))
+                    ledger.note_domains(job["id"], "Names and routes changed. The site did not answer on them yet: " + str(exc))
             for job in reversed(ledger.runtime_jobs()):
                 if job['state'] != 'queued':
                     continue

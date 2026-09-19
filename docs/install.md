@@ -35,13 +35,13 @@ and run `systemctl restart ssh`. Use the new account for everything below.
 
 ## Install Reeve
 
-The example below installs release `v1.1.10`.
+The example below installs release `v1.2.0`.
 
 ```sh
 sudo apt-get install -y git
 git clone https://github.com/tompowellweb/reeve.git
 cd reeve
-git checkout v1.1.10
+git checkout v1.2.0
 sudo python3 install.py
 ```
 
@@ -125,4 +125,6 @@ tls:
 ```
 
 Then `sudo reeve doctor --repair`. Caddy obtains a Let's Encrypt certificate for each hostname
-and renews it. Firewall rules and outgoing mail delivery still need arranging on a public server.
+and renews it. A name whose DNS does not point here yet is served with the edge's own
+certificate until it does; each site's **Domains** section says which kind every name has.
+Firewall rules and outgoing mail delivery still need arranging on a public server.

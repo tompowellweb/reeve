@@ -77,3 +77,17 @@ def test_existing_schema_migrates_without_changing_create_inputs(tmp_path):
     assert ledger.domains(ledger.get(rowid)) == ["old.hosting.test"]
     with ledger.db() as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 17
+
+
+def test_a_note_on_a_finished_change_keeps_the_record_and_explains(tmp_path):
+    ledger = Ledger(tmp_path / 'jobs.db', tmp_path / 'sites')
+    site = ledger.submit(ident(), {'name': 'shop', 'domain': 'shop.example.com'})
+    ledger.update(site['id'], 'succeeded', 'published')
+    job = ledger.submit_domains(ident(), site['id'], ['new.example', 'www.new.example'])
+    ledger.note_domains(job['id'], 'not yet')  # not finished: nothing to annotate
+    assert ledger.domain_jobs(site['id'])[0]['error'] == ''
+    ledger.finish_domains(job)
+    ledger.note_domains(job['id'], 'Names and routes changed. The site did not answer on them yet: curl (35)')
+    latest = ledger.domain_jobs(site['id'])[0]
+    assert latest['state'] == 'succeeded' and latest['error'].startswith('Names and routes changed')
+    assert ledger.domains(ledger.get(site['id'])) == ['new.example', 'www.new.example']
