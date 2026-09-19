@@ -373,8 +373,8 @@ def create_app(auth_path="/srv/ops/panel/web/auth.sqlite3", call=rpc, status_pat
             return render_site(request, row, error=str(exc), context_form=locals().get('value'), context_section=form.get('section'))
         return RedirectResponse('/sites/' + name + '#recovery', 303)
 
-    def destination_page(request, error='', connected=None, revealed=None):
-        return render(request, 'backup_destination.html', destination=call({'op': 'backup-destination'}), setup=call({'op': 'backup-setup'}), error=error, connected=connected, revealed=revealed)
+    def destination_page(request, error='', connected=None, revealed=None, card=None):
+        return render(request, 'backup_destination.html', destination=call({'op': 'backup-destination'}), setup=call({'op': 'backup-setup'}), error=error, connected=connected, revealed=revealed, card=card)
 
     @app.get('/backups')
     def backup_destination(request: Request):
@@ -429,6 +429,13 @@ def create_app(auth_path="/srv/ops/panel/web/auth.sqlite3", call=rpc, status_pat
             result = call({'op': 'backup-connect-card', 'card': text})
         except (ValueError, OSError, UnicodeDecodeError) as exc: return destination_page(request, error=str(exc))
         return destination_page(request, connected=result)
+
+    @app.post('/backups/card')
+    async def backup_card_show(request: Request):
+        await mutation(request)
+        try: result = call({'op': 'backup-card'})
+        except (ValueError, OSError) as exc: return destination_page(request, error=str(exc))
+        return destination_page(request, card=json.dumps(result, indent=2))
 
     @app.post('/backups/reveal')
     async def backup_reveal(request: Request):

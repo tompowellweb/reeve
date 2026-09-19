@@ -6,8 +6,8 @@ in time you choose, as new sites or into live ones.
 
 ## Keep this outside the server
 
-The **recovery card**: on **Backups**, next to the repository password, **Download recovery
-card** gives one small file with the destination address, its pinned host keys, this server's
+The **recovery card**: on **Backups**, next to the repository password, **Show recovery card**
+gives one small text, shown on the page to copy or saved as a file, with the destination address, its pinned host keys, this server's
 credentials and the repository password. Keep it in a password manager. It is the whole way into
 the backups, so treat it as the backups themselves. `sudo reeve backup card` prints the same.
 
