@@ -89,7 +89,8 @@ ssh -N -L 127.0.0.1:8088:127.0.0.1:8088 admin@server
 
 The installer prints this command with your account and the server's address. Open
 [http://127.0.0.1:8088](http://127.0.0.1:8088) and enter the operator password.
-The panel listens on the server's loopback address. Keep administration behind SSH or a VPN.
+The panel listens on the server's loopback address until secure access gives it a WireGuard
+address; either way it is never on the public address.
 
 To change the password, run this on the server:
 

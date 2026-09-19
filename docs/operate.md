@@ -102,12 +102,16 @@ The default schedule is:
 
 Complete backups contain site files, volumes, a fresh database dump and site settings.
 Enable pausing during backup when the application needs writes stopped for a consistent copy.
-Final backups from deleted sites and imported backups do not expire automatically.
-Local backups use `/srv/backups` unless `backups.local_path` is changed.
+Final backups from deleted sites and imported backups do not expire automatically. The nightly
+hour, retention and the local folder (`/srv/backups` by default) are on **Settings**. A server
+record, the settings and every site's hostnames and latest backup, is copied to the repository
+beside the backups, so a replacement server can find what was hosted.
 
 A site's **Backups** page offers download, import, restore to a new site, and restore of
 files or a database into the current site. Restoring into the current site takes a safety
-backup first. **History** lists deleted sites and their retained backups.
+backup first. **History** lists deleted sites and their retained backups. **Recover** works
+across sites: scan a repository, a folder or this server's copies, then restore several sites
+at once or roll a live site back to a chosen backup or database dump.
 
 ```sh
 sudo reeve site backup shop
@@ -130,15 +134,13 @@ Use **Allowed senders** for sender domains beyond the site's hostnames. The **Ma
 shows the queue, delivery failures and per-site counts.
 
 On **Settings**, outbound mail is `direct`, `relay` to a smart host, `sink` for testing, or
-`off`; set the server's mail hostname and public address there too, then the relay is
-redeployed.
+`off`; set the server's mail hostname and public address there too, and the relay is
+redeployed. `sudo reeve mail setup` does the same from the command line.
 
-```sh
-sudo systemctl restart reeve-worker
-sudo reeve mail setup
-```
-
-Public delivery also depends on the server's mail and DNS configuration.
+Direct delivery also needs three things outside Reeve: the provider must allow outbound port 25
+(some cloud providers block it by default), the server's reverse DNS must match the mail
+hostname, and each sending domain needs the SPF line the site page prints. Without them,
+messages sit in the queue as deferred or land in spam.
 
 ## Logs
 
@@ -203,6 +205,11 @@ Read the site's recent activity and the failed operation's output first.
 - **Unhealthy site:** identify whether web, PHP or the database failed on the site page.
 - **Quota full:** remove unneeded content or deliberately increase the quota.
 - **Missing proxy route:** `sudo reeve doctor --repair` rebuilds the proxy from recorded routes.
+- **A page answers 500:** the site's **Logs** page, source PHP, has the error.
+- **A name has no public certificate:** the Domains section shows what Let's Encrypt said;
+  **Request public certificate** asks again once DNS and ports are right.
+- **Locked out after secure access:** request the unlock address shown by **Reveal unlock
+  token** from the machine you want to admit; port 22 opens to it for thirty minutes.
 
 ```sh
 sudo reeve status

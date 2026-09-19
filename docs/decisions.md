@@ -38,6 +38,35 @@ A newer release must always restore a backup written by an older one, so a serve
 rebuilt on the current release from its last backup and resume. Any change to the backup
 format is proved by restoring an old backup before it ships.
 
+## Record the operator's change first
+
+What the operator asked for is recorded and visible the moment it is done: a domain change is
+the names and the routes. Everything that follows, certificates, container restarts, checks,
+is reported as status and can never undo the change. A step that gates on something outside
+the server's control, such as DNS or a certificate authority, is a status too, with what it
+said and a way to ask again.
+
+## Bound helpers by reading, never by limits on the child
+
+Helper output is bounded by how much the worker reads. A file-size limit on a child process
+caps every file it writes, which broke git's first clone once the repository held images.
+Git and archive steps run without it. The panel is never restarted inside a request it is
+serving; the restart is scheduled to run after the reply.
+
+## Keep XFS project quotas
+
+The per-site disk limit is a project quota over the site's folder: it ignores file ownership,
+which a site with root-owned configuration and database files under the image's user needs.
+ext4 project quotas would change nothing, and btrfs subvolume quotas were rejected because
+copy-on-write costs the databases too much.
+
+## Never lock the operator out
+
+Secure access is taken in steps that prove the path first: the tunnel is enabled without
+blocking anything, the lockdown can only be taken from over the tunnel after a live
+handshake, and it reverts by itself unless confirmed from there. A single-use unlock token,
+logged by the edge and acted on by the worker, opens SSH to one address for a while.
+
 ## Keep changes traceable
 
 Deploy committed, tested releases and check database schema compatibility before updates or

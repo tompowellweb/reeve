@@ -24,6 +24,9 @@ prepared test server and can change it. Read the selected script's requirements 
 | `reeve/worker.py` | Worker requests, scheduling and startup recovery |
 | `reeve/web.py`, `reeve/*_web.py` | Web routes |
 | `reeve/core.py`, `reeve/host.py` | Job storage and host operations |
+| `reeve/settings.py`, `reeve/secure.py` | Server settings and secure access |
+| `reeve/server_record.py`, `reeve/restoration.py` | The server record and multi-site recovery |
+| `reeve/certificates.py`, `reeve/site_logs.py` | Certificate status and log reading |
 | `reeve/templates/`, `reeve/static/` | Interface templates and assets |
 | `templates/` | Container build recipes and helper scripts |
 | `install.py`, `reeve/setup.py`, `systemd/` | Installation and services |
@@ -44,7 +47,12 @@ See [Design](design.md) and [Engineering decisions](decisions.md) for the constr
 4. Check service health and the behaviour changed by the release.
 
 The installer rejects a dirty checkout unless `--allow-modified` is supplied, which marks
-the installation as modified. Use committed releases for deployment.
+the installation as modified and carries changed tracked files only, not new untracked ones.
+Use committed releases for deployment; commit before installing on a test machine.
+
+Throwaway VMs are the usual proof: a Debian cloud image with a cloud-init seed, the tree copied
+in, `install.py`, the change exercised through the panel or the command line, the VM destroyed.
+Secure access needs a second VM as the WireGuard client.
 
 ## Schema changes and rollback
 
