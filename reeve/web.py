@@ -10,6 +10,21 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+
+class TunnelHostMiddleware:
+    """A Host of a WireGuard tunnel address (10.0.0.0/8, where secure mode puts the panel) passes the host check:
+    the panel listens beyond loopback only in secure mode, behind the firewall, and the tunnel network is
+    root-only state the web process cannot read. Loopback stays as it was."""
+    def __init__(self, app): self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            host = next((v.decode(errors="replace") for k, v in scope.get("headers", []) if k == b"host"), "")
+            name = host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+            if name.startswith("10.") and name.replace(".", "").isdigit():
+                scope = dict(scope); scope["headers"] = [(k, (b"panel.tunnel" + (b":" + host.rsplit(":", 1)[1].encode() if host.count(":") == 1 else b"")) if k == b"host" else v) for k, v in scope["headers"]]
+        await self.app(scope, receive, send)
+
 from .auth import Auth
 from .core import DEFAULTS, validate_create
 from .worker import rpc
@@ -26,7 +41,8 @@ def create_app(auth_path="/srv/ops/panel/web/auth.sqlite3", call=rpc, status_pat
         except (OSError, ValueError): return None
     auth = Auth(auth_path)
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver", "*.tunnel"])
+    app.add_middleware(TunnelHostMiddleware)
     app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
     templates = Jinja2Templates(directory=BASE / "templates")
     def timestamp(value):

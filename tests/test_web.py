@@ -469,3 +469,11 @@ def test_recover_page_offers_one_source_and_a_contextual_restore(setup, monkeypa
     assert reply.status_code == 200 and 'Recoveries' in reply.text
     rows = restoration.recoveries(ledger)
     assert sorted((r['mode'], r['backup_id']) for r in rows) == sorted([('dump', dump), ('new', other)])
+
+
+def test_a_tunnel_address_passes_the_host_check_but_other_names_do_not(setup):
+    client, _, _ = setup
+    assert client.get('/login', headers={'host': '10.181.134.1:8088'}).status_code == 200
+    assert client.get('/login', headers={'host': '10.7.7.7'}).status_code == 200
+    assert client.get('/login', headers={'host': 'evil.example'}).status_code == 400
+    assert client.get('/login', headers={'host': '192.168.1.5:8088'}).status_code == 400
