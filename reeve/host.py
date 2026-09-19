@@ -20,7 +20,7 @@ SITES = Path("/srv/sites")
 PROXY = OPS / "proxy"
 
 
-def backup_root():
+def backup_root(document=None):
     """Where local backups live: `backups.local_path` in server.yaml, `/srv/backups` by default.
 
     An absolute path with plain components; the installer creates it and the worker's modules
@@ -29,7 +29,7 @@ def backup_root():
     default = Path('/srv/backups')
     config = OPS / 'server.yaml'
     try:
-        values = (yaml.safe_load(config.read_text()) or {}).get('backups', {}) if config.exists() else {}
+        values = (document if document is not None else ((yaml.safe_load(config.read_text()) or {}) if config.exists() else {})).get('backups', {})
     except (OSError, yaml.YAMLError):
         return default  # the web process cannot read the private settings; it never touches the folder
     if not isinstance(values, dict) or values.keys() - {'local_path'}: raise ValueError('Invalid backups settings in server.yaml')
@@ -42,14 +42,14 @@ def backup_root():
 BACKUPS = backup_root()
 
 
-def tls_settings():
+def tls_settings(document=None):
     """`tls:` in server.yaml: `mode` internal (the edge's own CA, for a test machine or private names) or
     public (certificates from Let's Encrypt, which needs real DNS and ports 80 and 443 reachable), and
     the contact `email` the certificate authority wants. Internal by default."""
     default = {'mode': 'internal', 'email': ''}
     config = OPS / 'server.yaml'
     try:
-        values = (yaml.safe_load(config.read_text()) or {}).get('tls', {}) if config.exists() else {}
+        values = (document if document is not None else ((yaml.safe_load(config.read_text()) or {}) if config.exists() else {})).get('tls', {})
     except (OSError, yaml.YAMLError):
         return default
     if not isinstance(values, dict) or values.keys() - default.keys(): raise ValueError('Invalid tls settings in server.yaml')

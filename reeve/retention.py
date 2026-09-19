@@ -16,9 +16,9 @@ DEFAULT = {'database_days': 2, 'site': {'within_days': 2, 'daily_days': 7, 'week
 PROTECTED_KINDS = ('final', 'imported')
 
 
-def policy():
+def policy(document=None):
     config = OPS / 'server.yaml'
-    values = yaml.safe_load(regular(config)).get('retention', {}) if config.exists() else {}
+    values = (document if document is not None else (yaml.safe_load(regular(config)) if config.exists() else {})).get('retention', {})
     if not isinstance(values, dict) or values.keys() - DEFAULT.keys(): raise ValueError('Invalid retention policy')
     site = {**DEFAULT['site'], **(values.get('site') or {})}
     if set(site) - set(DEFAULT['site']): raise ValueError('Invalid site retention policy')

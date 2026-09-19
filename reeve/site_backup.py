@@ -61,9 +61,9 @@ def initialize(db):
     if 'safety_backup' not in columns: db.execute("ALTER TABLE site_restores ADD COLUMN safety_backup TEXT NOT NULL DEFAULT ''")
 
 
-def policy():
+def policy(document=None):
     config = OPS / 'server.yaml'
-    values = yaml.safe_load(ci.regular(config)).get('site_backups', {}) if config.exists() else {}
+    values = (document if document is not None else (yaml.safe_load(ci.regular(config)) if config.exists() else {})).get('site_backups', {})
     if not isinstance(values, dict) or values.keys() - {'hour', 'keep'}: raise ValueError('Invalid site backup policy')
     result = {'hour': values.get('hour', DEFAULT_POLICY['hour'])}  # `keep` is superseded by the retention policy and ignored.
     if type(result['hour']) is not int or not 0 <= result['hour'] <= 23: raise ValueError('Invalid site backup hour')
@@ -577,6 +577,19 @@ def clear_tree(target):
         else: child.unlink()
 
 
+def safety_backup(ledger, host, job, row):
+    """Before anything in a live site changes: a complete backup of it as it is, recorded on the restore."""
+    if job.get('safety_backup'): return
+    ledger.finish_site_restore(job['id'], 'running', 'safety backup of the current site')
+    safety_id = str(uuid.uuid4()); now = time.time()
+    with ledger.db() as db:
+        db.execute("INSERT INTO site_backups VALUES (?,?,'pre-restore','queued','','','',?,?)", (safety_id, row['id'], now, now))
+        db.execute('UPDATE site_restores SET safety_backup=? WHERE id=?', (safety_id, job['id']))
+    if not perform(ledger, host, {'id': safety_id, 'site_id': row['id'], 'kind': 'pre-restore'}):
+        failed = next(b for b in ledger.site_backups(row['id']) if b['id'] == safety_id)
+        raise ValueError('The safety backup failed, so nothing was changed: ' + failed['error'])
+
+
 def perform_restore(ledger, host, job):
     """Second phase of a managed restore: content, dump, schedules, notes, routing profile."""
     row = ledger.get(job['site_id'])
@@ -586,19 +599,24 @@ def perform_restore(ledger, host, job):
     if row['state'] != 'succeeded': return
     ledger.finish_site_restore(job['id'], 'running', job['step'])
     try:
+        if scope == 'dump':
+            # The database alone, from a scheduled dump artifact (its own manifest and file), after a safety backup.
+            from .database_backup import artifact_path as dump_path, restore_managed
+            folder = dump_path(job['snapshot']); trusted(folder, directory=True)
+            dump = json.loads(ci.regular(folder / 'manifest.json'))
+            if dump.get('kind') != 'local-database-dump' or dump.get('operation') != job['snapshot']: raise ValueError('Not a database dump artifact')
+            if checksum(folder / dump['file']) != dump['sha256']: raise ValueError('Dump checksum mismatch; restore refused.')
+            safety_backup(ledger, host, job, row)
+            ledger.finish_site_restore(job['id'], 'running', 'restoring database from the dump')
+            restore_managed(host, row, folder / dump['file'], dump, job['id'])
+            ledger.finish_site_restore(job['id'], 'running', 'verifying'); host.verify_domains(ledger.domains(row))
+            ledger.finish_site_restore(job['id'], 'succeeded', 'restored database from the dump of ' + time.strftime('%Y-%m-%d %H:%M', time.gmtime(dump.get('completed_at') or 0)))
+            return
         root, manifest = snapshot(job['snapshot'])
         managed = manifest['managed']; site = SITES / row['name']; trusted(site, directory=True)
         payload = json.loads(row['payload'])
         if scope != 'full':
-            if not job.get('safety_backup'):
-                ledger.finish_site_restore(job['id'], 'running', 'safety backup of the current site')
-                safety_id = str(uuid.uuid4()); now = time.time()
-                with ledger.db() as db:
-                    db.execute("INSERT INTO site_backups VALUES (?,?,'pre-restore','queued','','','',?,?)", (safety_id, row['id'], now, now))
-                    db.execute('UPDATE site_restores SET safety_backup=? WHERE id=?', (safety_id, job['id']))
-                if not perform(ledger, host, {'id': safety_id, 'site_id': row['id'], 'kind': 'pre-restore'}):
-                    failed = next(b for b in ledger.site_backups(row['id']) if b['id'] == safety_id)
-                    raise ValueError('The safety backup failed, so nothing was changed: ' + failed['error'])
+            safety_backup(ledger, host, job, row)
             if scope == 'database':
                 ledger.finish_site_restore(job['id'], 'running', 'restoring database')
                 from .database_backup import restore_managed

@@ -44,10 +44,10 @@ DEFAULTS = {'mode': 'direct', 'relayhost': '', 'hostname': '', 'public_ip': '', 
 CAPS = ['CHOWN', 'DAC_OVERRIDE', 'DAC_READ_SEARCH', 'FOWNER', 'FSETID', 'SETGID', 'SETUID', 'KILL', 'NET_BIND_SERVICE']
 
 
-def settings():
-    """The server's mail settings from server.yaml, validated."""
+def settings(document=None):
+    """The server's mail settings from server.yaml (or the given document), validated."""
     config = OPS / 'server.yaml'
-    values = (yaml.safe_load(config.read_text()) or {}).get('mail', {}) if config.exists() else {}
+    values = (document if document is not None else ((yaml.safe_load(config.read_text()) or {}) if config.exists() else {})).get('mail', {})
     if not isinstance(values, dict) or values.keys() - DEFAULTS.keys(): raise ValueError('Invalid mail settings in server.yaml')
     result = {**DEFAULTS, **values}
     if result['mode'] is False: result['mode'] = 'off'  # YAML reads a bare `off` as a boolean

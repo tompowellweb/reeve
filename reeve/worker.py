@@ -33,6 +33,9 @@ def dispatch(message, ledger, host):
     fields = {"package-list": {"op"}, "package-deploy": {"op", "id", "data", "sha256"}, "package-status": {"op", "id"}, "compose-site": {"op", "site_id"}, "list": {"op"}, "defaults": {"op"}, "create": {"op", "id", "data"}, "retry": {"op", "id"},
               "domains": {"op", "id", "site_id", "domains"}, "retry-domains": {"op", "id"},
               "certificates": {"op", "site_id"}, "request-certificate": {"op", "site_id", "domain"},
+              "settings": {"op"}, "settings-save": {"op", "group", "values"},
+              "recover-status": {"op"}, "recover-scan": {"op", "source", "folder"}, "recover-submit": {"op", "items"},
+              "recover-retry": {"op", "id"}, "recover-settings": {"op"},
               "versions": {"op"}, "refresh-versions": {"op", "id"}, "php-rebuild": {"op", "id"}, "housekeeping": {"op"}, "sftp-key": {"op", "site_id"}, "backup-connect": {"op", "data"}, "backup-enabled": {"op", "enabled"}, "backup-disconnect": {"op"}, "backup-reveal": {"op"}, "backup-setup": {"op"}, "backup-server-key": {"op"}, "php-switch": {"op", "id", "site_id", "branch"},
               "php-rollback": {"op", "id", "site_id", "previous"}, "retry-runtime": {"op", "id"},
               "database-versions": {"op"}, "refresh-databases": {"op", "id"},
@@ -292,6 +295,30 @@ def dispatch(message, ledger, host):
         return ledger.submit_domains(message["id"], message["site_id"], message["domains"])
     if op == "retry-domains":
         return ledger.retry_domains(message["id"])
+    if op == "settings":
+        from .settings import read
+        return read()
+    if op == "settings-save":
+        from .settings import save
+        return save(host, ledger, message["group"], message["values"] if isinstance(message["values"], dict) else {})
+    if op == "recover-status":
+        from .restoration import status
+        return status(ledger)
+    if op == "recover-scan":
+        from .restoration import request_scan
+        return request_scan(str(message["source"]), str(message.get("folder") or ""))
+    if op == "recover-submit":
+        from .restoration import submit
+        return submit(ledger, message["items"])
+    if op == "recover-retry":
+        from .restoration import retry
+        return retry(ledger, str(message["id"]))
+    if op == "recover-settings":
+        from .restoration import read_scan
+        from .settings import restore as restore_settings
+        scan = read_scan()
+        if not scan or not scan.get("record"): raise ValueError("The last scan found no server record")
+        return restore_settings(host, ledger, scan["record"].get("settings"))
     if op == "certificates":
         from .certificates import edge_issuance
         return edge_issuance(ledger.domains(ledger.get(message["site_id"])))
@@ -376,12 +403,14 @@ def startup_recovery(ledger, host, log=None):
     from .sftp import recover as recover_sftp
     from .mail import recover as recover_mail
     from .site_backup import recover as recover_site_backups
+    from .restoration import recover as recover_recoveries
     from .host import reconcile_edge
     steps = [('edge configuration', lambda: reconcile_edge(host)), ('database backups', lambda: recover_backups(ledger, host)), ('content jobs', lambda: recover_content(ledger)),
              ('toolboxes', lambda: recover_toolboxes(ledger, host)), ('web settings', lambda: recover_web(ledger, host)),
              ('site rules', lambda: recover_rules(ledger, host)), ('PHP limits', lambda: recover_php(ledger, host)), ('database usage', lambda: recover_usage(ledger, host)),
              ('customer SFTP', lambda: recover_sftp(ledger, host)), ('mail', lambda: recover_mail(ledger, host)),
-             ('site backups', lambda: recover_site_backups(ledger))]
+             ('site backups', lambda: recover_site_backups(ledger)),
+             ('recoveries', lambda: recover_recoveries(ledger))]
     failed = []
     for name, step in steps:
         try: step()
@@ -587,6 +616,8 @@ def run():
                 if job['state'] != 'queued': continue
                 from .site_backup import perform_restore
                 perform_restore(ledger, host, job)
+            from .restoration import tick as recovery_tick
+            recovery_tick(ledger, host)
             time.sleep(0.5)
 
     allowed_uid = pwd.getpwnam("hosting-web").pw_uid

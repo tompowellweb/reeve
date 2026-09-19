@@ -1,0 +1,39 @@
+{% extends 'base.html' %}{% block title %}Recover · Reeve{% endblock %}{% block content %}
+{% macro when(value) %}{% if value %}<time data-timestamp="{{value}}">{{value|timestamp}}</time>{% else %}unknown time{% endif %}{% endmacro %}
+<a class="breadcrumb" href="/">← Sites</a><div class="heading"><div><h1>Recover</h1><p class="muted">Every site that was backed up, from the connected repository, a folder of backups or this server's own copies. Pick sites and points in time; each comes back as a new site or into a live one.</p></div></div>
+{% if error %}<p class="error">{{error}}</p>{% endif %}
+{% set scan = status.scan %}
+<section class="card"><h2>Look for backups</h2>
+<form method="post" action="/recover/scan" class="row-actions"><input type="hidden" name="csrf" value="{{session.csrf}}">
+<label>Where<select name="source"><option value="repository"{% if scan and scan.source == 'repository' %} selected{% endif %}>The connected backup repository{% if destination.state == 'not configured' %} (none connected){% endif %}</option><option value="folder"{% if scan and scan.source == 'folder' %} selected{% endif %}>A folder on this server</option><option value="local"{% if scan and scan.source == 'local' %} selected{% endif %}>This server's own copies only</option></select></label>
+<label>Folder (for a folder)<input name="folder" value="{{scan.folder if scan else ''}}" placeholder="/mnt/old-backups"></label>
+<button>Scan</button></form>
+{% if scan %}<p class="compact-note">{% if scan.state == 'succeeded' %}Scanned {{'the repository' if scan.source == 'repository' else scan.folder if scan.source == 'folder' else 'this server'}} at {{when(scan.finished_at)}}: {{scan.sites|length}} site{{'' if scan.sites|length == 1 else 's'}}.{% if scan.unread %} {{scan.unread}} snapshot{{'' if scan.unread == 1 else 's'}} could not be read.{% endif %}{% elif scan.state == 'failed' %}<span class="error">The scan failed: {{scan.error}}</span>{% else %}Scanning… reload in a moment. A large repository takes a few minutes the first time.{% endif %}</p>{% endif %}
+</section>
+{% if scan and scan.state == 'succeeded' %}
+{% if scan.record %}<section class="card"><h2>Server record</h2><p><strong>{{scan.record.hostname}}</strong> · Reeve {{scan.record.version or '?'}} · {{scan.record.sites|length}} site{{'' if scan.record.sites|length == 1 else 's'}} at the time{% if scan.record.written_at %} · written {{when(scan.record.written_at)}}{% endif %}</p>
+<p class="compact-note">The server's settings (certificates, mail, profile, backups, updates) as recorded. Applying them here sets this server up the same way; certificates and mail take effect at once.</p>
+<form method="post" action="/recover/settings"><input type="hidden" name="csrf" value="{{session.csrf}}"><button class="secondary">Apply the recorded settings</button></form></section>{% endif %}
+<section class="card"><h2>Sites found</h2>
+{% if scan.sites %}
+<form method="post" action="/recover/submit"><input type="hidden" name="csrf" value="{{session.csrf}}">
+<table class="recover-table"><thead><tr><th></th><th>Site</th><th>Point in time</th><th>How</th><th>As</th></tr></thead><tbody>
+{% for site in scan.sites %}{% set i = loop.index0|string %}{% set latest = site.backups[0] if site.backups else none %}
+<tr><td><input type="checkbox" name="include" value="{{i}}" aria-label="Include {{site.name}}"></td>
+<td><strong>{{site.name}}</strong><br><small>{{site.site_kind or '?'}}{% if site.runtime %} · {{site.runtime}}{% endif %}{% if site.domains %} · {{site.domains|join(', ')}}{% endif %}{% if site.live %}<br>Live on this server as <a href="/sites/{{site.live.name}}">{{site.live.name}}</a>{% if not site.live.managed %} (Compose: new site only){% endif %}{% endif %}</small></td>
+<td>{% if site.backups %}<select name="backup-{{i}}">{% for b in site.backups %}<option value="{{b.id}}">{{when(b.completed_at)|striptags}} · {{b.backup_kind or 'backup'}}{% if b.bytes %} · {{(b.bytes / 1048576)|round(1)}} MiB{% endif %}{% if b.has_dump %} · with database{% elif b.has_dump is sameas false %} · files only{% endif %} · {{'here' if b.source == 'local' else 'repository' if b.source == 'repository' else 'folder'}}</option>{% endfor %}</select>{% else %}<small>no complete backup</small>{% endif %}
+{% if site.dumps %}<br><small>Database dumps: </small><select name="dump-{{i}}">{% for d in site.dumps %}<option value="{{d.id}}">{{when(d.completed_at)|striptags}} · {{d.engine}} · {{'here' if d.source == 'local' else 'repository' if d.source == 'repository' else 'folder'}}</option>{% endfor %}</select>{% endif %}</td>
+<td><select name="mode-{{i}}"><option value="new">New site from the chosen backup</option>{% if site.live and site.live.managed %}<option value="both">Into the live site: files and database</option><option value="files">Into the live site: files only</option><option value="database">Into the live site: database only</option>{% if site.dumps %}<option value="dump">Into the live site: database from the chosen dump</option>{% endif %}{% endif %}</select>{% if site.live and site.live.managed %}<input type="hidden" name="target-{{i}}" value="{{site.live.name}}">{% endif %}</td>
+<td><input name="name-{{i}}" value="{{site.name if not site.live else site.name ~ '-restored'}}" aria-label="New site name" placeholder="name"><br><input name="domains-{{i}}" value="{{site.domains|join(' ')}}" aria-label="Hostnames" placeholder="hostnames, primary first"></td></tr>
+{% endfor %}</tbody></table>
+<p class="compact-note">A restore into a live site takes a complete backup of it first. Restores run one after another; uploads to the repository stay paused until you resume them on the Backups page.</p>
+<button>Restore the selected sites</button></form>
+{% else %}<p class="empty-summary">Nothing found there.</p>{% endif %}
+</section>
+{% endif %}
+<section class="card" id="progress"><h2>Recoveries</h2>
+{% for r in status.recoveries %}<article class="summary-row"><div><strong>{{r.site_name or r.backup_id[:8]}}</strong> <span class="badge{% if r.state == 'succeeded' %} good{% elif r.state in ('failed', 'recovery-needed') %} warn{% endif %}">{{r.state}}</span><small>{{ {'new': 'as a new site ' ~ r.name, 'files': 'files into the live site', 'database': 'database into the live site', 'both': 'files and database into the live site', 'dump': 'database from a dump'}[r.mode] }} · {{r.step}} · {{when(r.updated)}}</small>{% if r.error %}<small class="error">{{r.error}}</small>{% endif %}</div>
+{% if r.state in ('failed', 'recovery-needed') %}<form method="post" action="/recover/retry/{{r.id}}"><input type="hidden" name="csrf" value="{{session.csrf}}"><button class="secondary">Retry</button></form>{% endif %}</article>
+{% else %}<p class="empty-summary">No recoveries yet.</p>{% endfor %}
+</section>
+{% endblock %}

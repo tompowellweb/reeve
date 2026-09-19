@@ -1,73 +1,66 @@
 # Recover
 
-Use this guide to restore sites onto a replacement Debian 13 server. For an individual
-site restore on a working server, use its **Backups** page.
+Restoration is a server feature. Reeve finds every site that was backed up to a repository, a
+folder of backups or the server's own copies, and brings back the ones you choose, at the point
+in time you choose, as new sites or into live ones.
 
 ## Keep these outside the server
 
-- Access to the Reeve source at the release used for backups, or a compatible newer release.
-- The backup destination address, repository password and SFTP or S3 access credentials.
-- For SFTP, the trusted host key fingerprint and a way to authorise a new SSH key.
-- The complete backup ID, site name and hostnames for each site you want to restore.
+- The backup destination address and its repository password.
+- For SFTP, the credentials or a way to authorise a new server's key, and the host key fingerprint.
 
-Record these when setting up backups. If the old panel is unavailable, the restic repository's
-snapshot tags contain `hosting-site:<backup-id>`; backup manifests contain the site name and
-domains. **The backup ID is not the restic snapshot ID.**
+Nothing else. The repository holds a **server record** beside the site backups: the server's
+settings, its release, and every site with its hostnames and latest complete backup. It is
+written whenever something changes and copied with the backups.
 
-The old panel database and server disk are not required.
+## Replace a server
 
-## 1. Install the replacement server
+1. Install Reeve on a fresh Debian 13 server as in [Install](install.md); the release that
+   made the backups or any newer one.
+2. On **Backups**, connect the same destination and choose **existing repository password**.
+   Leave uploads paused: two servers must not write to one repository.
+3. On **Recover**, scan the repository. It lists the sites found, each with its complete
+   backups and database dumps by time, and the server record. Apply the recorded settings,
+   tick the sites, keep or change their names and hostnames, and press **Restore the selected
+   sites**. Restores run one after another; the page shows each step.
+4. Check the sites through the new server, point DNS at it, then resume uploads on **Backups**.
 
-Follow [Install](install.md), using the release that produced the backups or a compatible
-newer one. Keep the operator password and sign in through the SSH tunnel.
-
-## 2. Connect the backup repository
-
-![The Backup destination page with a repository connected](images/backups.png)
-
-On **Backups**, enter the existing destination and choose **existing repository password**.
-For SFTP, authorise this server's public key if needed and compare the host key fingerprint
-with your saved copy.
-
-Leave uploads paused until this server is ready to take over. Two panels uploading to one
-repository are not supported.
-
-## 3. Restore the sites
-
-On the replacement server, run:
+The same from the command line:
 
 ```sh
-sudo sh /opt/reeve/current/scripts/restore-sites.sh \
-  '<backup-id>=shop=shop.example.com,www.shop.example.com'
+sudo reeve server scan
+sudo reeve server restore --settings
+sudo reeve server recoveries
 ```
 
-Replace the example with the backup ID, new site name and hostnames. The first hostname is
-primary. Add one quoted argument per site.
+`reeve server restore` takes every site found, newest backup, recorded hostnames; name sites
+to restore only those.
 
-The script downloads each backup and restores it as a new site. Missing PHP images and
-Compose builds can add time. Read the reported site, restore and domain job states;
-investigate any failure before proceeding.
+## Roll a live site back
 
-## 4. Verify before switching traffic
+On **Recover**, scan the repository or this server's own copies, tick the site and choose:
+
+- **files and database** from a chosen backup: the site as it was then;
+- **files only** or **database only** from a chosen backup;
+- **database from a chosen dump**: the most recent database dump, useful after rolling files
+  back to an earlier day on a site whose orders must stay current.
+
+A restore into a live site takes a complete backup of it first, listed on the site's Backups
+page as `pre-restore`.
+
+## A folder of backups
+
+Backups copied out of a server's `/srv/backups/staging` folders, or exported from a site's
+Backups page, can be scanned from any folder on this server: choose **A folder on this
+server** and give its path. A `server-record.json` in that folder is read too.
+
+## Verify
 
 ```sh
 sudo reeve site list
 sudo reeve site restores shop
 ```
 
-Confirm that site creation and restoration succeeded. Test every hostname through the new
-server's proxy. With the current local CA setup, run this on the server:
-
-```sh
-sudo curl --cacert /srv/ops/proxy/data/caddy/pki/authorities/local/root.crt \
-  --resolve shop.example.com:443:127.0.0.1 https://shop.example.com/
-```
-
-Also test application login, database content and uploaded files. Restoring does not rewrite
-URLs stored by an application; a hostname change may need application-specific changes.
-
-## 5. Take over
-
-Complete public TLS and firewall configuration, then point DNS at the replacement server.
-Once this is the only server writing to the repository, resume uploads on **Backups** and
-confirm that a new backup is copied successfully.
+Test every hostname through the new server's proxy and the application's login, database
+content and uploads. Restoring does not rewrite URLs stored by an application; a hostname
+change may need application-specific changes.

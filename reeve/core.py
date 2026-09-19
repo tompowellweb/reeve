@@ -115,6 +115,8 @@ class Ledger(DomainLedger, RuntimeLedger, DatabaseLedger, ContentLedger, BackupL
             self.initialize_backups(db)
             from .traffic import initialize as initialize_traffic
             initialize_traffic(db)
+            from .restoration import initialize as initialize_recoveries
+            initialize_recoveries(db)   # additive; older workers ignore it
             # Site backup/restore/delete records require this worker; older workers must refuse them.
             db.execute('PRAGMA user_version=17')
 

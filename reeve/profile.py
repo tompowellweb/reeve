@@ -18,12 +18,12 @@ PROFILES = {
 }
 
 
-def name():
+def name(document=None):
     """The configured profile; `standard` when unset. The web process cannot read the private
     settings and only displays what the worker's summary says, so it sees the default."""
     config = OPS / 'server.yaml'
     try:
-        value = (yaml.safe_load(config.read_text()) or {}).get('profile', 'standard') if config.exists() else 'standard'
+        value = (document if document is not None else ((yaml.safe_load(config.read_text()) or {}) if config.exists() else {})).get('profile', 'standard')
     except (OSError, yaml.YAMLError):
         return 'standard'
     if value not in PROFILES: raise ValueError('profile must be small, standard or large')

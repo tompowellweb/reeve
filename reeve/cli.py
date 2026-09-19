@@ -71,6 +71,14 @@ def add_others(sub):
     update = sub.add_parser('update', help='install the newest release, or a named one'); update.add_argument('--to', help='a version such as 1.2.0'); update.add_argument('--check', action='store_true', help='only ask what is available')
     password = sub.add_parser('password', help='set the operator password'); password.add_argument('--stdin', action='store_true', help='read it from a private pipe')
     doctor = sub.add_parser('doctor', help='check the machine and the panel'); doctor.add_argument('--repair', action='store_true', help='rebuild the edge from the recorded routes')
+    settings = sub.add_parser('settings', help="the server's settings").add_subparsers(dest='verb', required=True)
+    settings.add_parser('show', help='every group as the Settings page shows it')
+    save = settings.add_parser('set', help='save one group: reeve settings set certificates mode=public email=you@example.com'); save.add_argument('group'); save.add_argument('values', nargs='+', help='key=value pairs')
+    server = sub.add_parser('server', help='recover what was hosted: scan a repository or folder, restore sites').add_subparsers(dest='verb', required=True)
+    scan = server.add_parser('scan', help='look for backups in the connected repository, a folder or on this server'); scan.add_argument('--folder', help='a folder of backups on this server'); scan.add_argument('--local', action='store_true', help="this server's own copies only")
+    server.add_parser('found', help='what the last scan found')
+    restore = server.add_parser('restore', help='restore sites from the last scan as new sites, newest backup, recorded hostnames'); restore.add_argument('names', nargs='*', help='site names as found; none means every site'); restore.add_argument('--settings', action='store_true', help='also apply the recorded server settings')
+    server.add_parser('recoveries', help='the recovery queue')
 
 
 def status():
@@ -164,6 +172,32 @@ def main():
         secret = sys.stdin.readline(1026).rstrip('\n') if args.stdin else getpass.getpass('New operator password: ')
         Auth('/srv/ops/panel/web/auth.sqlite3').set_password(secret)
         return out({'password': 'changed; existing sessions revoked'})
+    if noun == 'settings':
+        if verb == 'show': return out(rpc({'op': 'settings'}))
+        values = dict(v.split('=', 1) for v in args.values if '=' in v)
+        return out(rpc({'op': 'settings-save', 'group': args.group, 'values': values}))
+    if noun == 'server':
+        if verb == 'scan':
+            source = 'folder' if args.folder else 'local' if args.local else 'repository'
+            rpc({'op': 'recover-scan', 'source': source, 'folder': args.folder or ''})
+            import time
+            for _ in range(600):
+                scan = rpc({'op': 'recover-status'})['scan']
+                if scan and scan['state'] in ('succeeded', 'failed'): break
+                time.sleep(2)
+            return out({k: scan.get(k) for k in ('state', 'source', 'error', 'unread')} | {'sites': [{'name': s['name'], 'backups': len(s['backups']), 'dumps': len(s['dumps']), 'live': bool(s.get('live')), 'domains': s['domains']} for s in scan.get('sites') or []], 'record': bool(scan.get('record'))})
+        if verb == 'found': return out(rpc({'op': 'recover-status'})['scan'])
+        if verb == 'recoveries': return out(rpc({'op': 'recover-status'})['recoveries'])
+        if verb == 'restore':
+            scan = rpc({'op': 'recover-status'})['scan']
+            if not scan or scan['state'] != 'succeeded': raise SystemExit('Scan first: reeve server scan')
+            if args.settings: out(rpc({'op': 'recover-settings'}))
+            chosen = [s for s in scan['sites'] if (not args.names or s['name'] in args.names) and s['backups'] and not s.get('live')]
+            missing = set(args.names) - {s['name'] for s in scan['sites']}
+            if missing: raise SystemExit('Not found in the scan: ' + ', '.join(sorted(missing)))
+            items = [{'backup': s['backups'][0]['id'], 'mode': 'new', 'name': s['name'], 'domains': ' '.join(s['domains'])} for s in chosen]
+            if not items: raise SystemExit('Nothing to restore: every named site is live here already or has no complete backup')
+            return out({'queued': rpc({'op': 'recover-submit', 'items': items}), 'sites': [s['name'] for s in chosen]})
     if noun == 'doctor':
         from .host import preflight
         result = {'preflight': preflight()}

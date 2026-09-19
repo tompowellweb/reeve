@@ -35,13 +35,13 @@ and run `systemctl restart ssh`. Use the new account for everything below.
 
 ## Install Reeve
 
-The example below installs release `v1.2.2`.
+The example below installs release `v1.3.0`.
 
 ```sh
 sudo apt-get install -y git
 git clone https://github.com/tompowellweb/reeve.git
 cd reeve
-git checkout v1.2.2
+git checkout v1.3.0
 sudo python3 install.py
 ```
 
@@ -101,30 +101,15 @@ sudo reeve password
 
 ![The Backup destination page](images/backups.png)
 
-Review `/srv/ops/server.yaml`. Set `profile` to `small`, `standard` or `large` to choose
-resource defaults; use `small` for a 2–4 GB server. The default is `standard`.
-The repository's `config/server.example.yaml` lists storage and retention settings.
-
-Restart the worker after editing settings:
-
-```sh
-sudo systemctl restart reeve-worker
-```
+Open **Settings** and choose the server profile that matches the machine (`small` for
+2–4 GB).
 
 Connect a backup destination on the **Backups** page and save its repository password
 outside the server. See [Operate](operate.md) for mail settings, site creation and updates.
 
 Sites get certificates from the edge's own certificate authority until you switch to public
-ones. When the sites' DNS points at this server and ports 80 and 443 are reachable from the
-internet, set in `server.yaml`:
+ones on **Settings**, once the sites' names point at this server and ports 80 and 443 are
+reachable from the internet. A name whose DNS does not point here yet is served with the
+edge's own certificate until it does; each site's **Domains** section says which kind every
+name has. Firewall rules and outgoing mail delivery still need arranging on a public server.
 
-```yaml
-tls:
-  mode: public
-  email: you@example.com
-```
-
-Then `sudo reeve doctor --repair`. Caddy obtains a Let's Encrypt certificate for each hostname
-and renews it. A name whose DNS does not point here yet is served with the edge's own
-certificate until it does; each site's **Domains** section says which kind every name has.
-Firewall rules and outgoing mail delivery still need arranging on a public server.

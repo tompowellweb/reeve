@@ -1,0 +1,39 @@
+{% extends 'base.html' %}{% block title %}Settings · Reeve{% endblock %}{% block content %}
+<a class="breadcrumb" href="/">← Sites</a><div class="heading"><div><h1>Server settings</h1><p class="muted">What this server does for every site. Each Save applies at once and says what it did.</p></div></div>
+{% if error %}<p class="error">{{error}}</p>{% endif %}
+{% if saved %}<p class="notice">Saved {{titles.get(saved, saved)}}.{% if note %} {{note}}{% endif %}</p>{% endif %}
+{% if settings %}
+<section class="card" id="certificates"><h2>Certificates</h2>
+<form method="post" action="/settings/certificates"><input type="hidden" name="csrf" value="{{session.csrf}}">
+<label>Mode<select name="mode">{% for m in settings.certificates.modes %}<option value="{{m}}"{% if m == settings.certificates.mode %} selected{% endif %}>{{'Public: Let\'s Encrypt, for a server the internet reaches' if m == 'public' else "Internal: the edge's own certificate authority, for a test machine or private names"}}</option>{% endfor %}</select></label>
+<label>Contact email for Let's Encrypt<input name="email" type="email" value="{{settings.certificates.email}}" placeholder="you@example.com"></label>
+<p class="compact-note">Public needs the sites' names pointing at this server and ports 80 and 443 reachable. A name that is not there yet is served with the edge's own certificate until it is; each site's Domains section shows which. Saving a switch to public restarts the edge for a second and asks for every name at once.</p>
+<button>Save certificates</button></form></section>
+<section class="card" id="mail"><h2>Outbound mail</h2>
+<form method="post" action="/settings/mail"><input type="hidden" name="csrf" value="{{session.csrf}}">
+<label>Mode<select name="mode">{% for m in settings.mail.modes %}<option value="{{m}}"{% if m == settings.mail.mode %} selected{% endif %}>{{ {'off': 'Off', 'direct': 'Direct: this server delivers to the internet', 'relay': 'Relay: hand every message to a smart host', 'sink': 'Sink: keep messages in a mailbox on this server, for testing'}[m] }}</option>{% endfor %}</select></label>
+<div class="form-pair"><label>Smart host (relay mode)<input name="relayhost" value="{{settings.mail.relayhost}}" placeholder="smtp.example.net:587"></label><label>Messages per hour, per site<input name="rate_per_hour" type="number" min="1" max="100000" value="{{settings.mail.rate_per_hour}}"></label></div>
+<div class="form-pair"><label>This server's mail hostname<input name="hostname" value="{{settings.mail.hostname}}" placeholder="server.example.com"></label><label>Public address (for the SPF line shown to sites)<input name="public_ip" value="{{settings.mail.public_ip}}" placeholder="203.0.113.5"></label></div>
+<p class="compact-note">Direct delivery needs the provider to allow port 25 out and reverse DNS matching the hostname. Saving redeploys the relay and reattaches every PHP site.</p>
+<button>Save mail</button></form></section>
+<section class="card" id="profile"><h2>Server profile</h2>
+<form method="post" action="/settings/profile"><input type="hidden" name="csrf" value="{{session.csrf}}">
+<label>Profile<select name="name">{% for key, label in settings.profile.profiles.items() %}<option value="{{key}}"{% if key == settings.profile.name %} selected{% endif %}>{{label}}</option>{% endfor %}</select></label>
+<p class="compact-note">The defaults a new site gets: PHP memory and workers, the site's memory cap, what its database is sized for. Existing sites keep their values.</p>
+<button>Save profile</button></form></section>
+<section class="card" id="backups"><h2>Backups</h2>
+<form method="post" action="/settings/backups"><input type="hidden" name="csrf" value="{{session.csrf}}">
+<div class="form-pair"><label>Nightly complete backup at (hour, UTC)<input name="hour" type="number" min="0" max="23" value="{{settings.backups.hour}}"></label><label>Local folder<input name="local_path" value="{{settings.backups.local_path}}"></label></div>
+<p class="compact-note">Keep complete site backups: every one for the first days, then one a day, one a week, one a month, for this many days each. Zero turns a tier off.</p>
+<div class="form-pair"><label>Every backup, days<input name="within_days" type="number" min="0" max="3650" value="{{settings.backups.within_days}}"></label><label>Daily, days<input name="daily_days" type="number" min="0" max="3650" value="{{settings.backups.daily_days}}"></label></div>
+<div class="form-pair"><label>Weekly, days<input name="weekly_days" type="number" min="0" max="3650" value="{{settings.backups.weekly_days}}"></label><label>Monthly, days<input name="monthly_days" type="number" min="0" max="3650" value="{{settings.backups.monthly_days}}"></label></div>
+<label>Keep database dumps, days<input name="database_days" type="number" min="1" max="3650" value="{{settings.backups.database_days}}"></label>
+<p class="compact-note">Changing the local folder needs the folder moved with the panel services stopped; the setting alone moves nothing.</p>
+<button>Save backups</button></form></section>
+<section class="card" id="updates"><h2>PHP rebuilds</h2>
+<form method="post" action="/settings/updates"><input type="hidden" name="csrf" value="{{session.csrf}}">
+<div class="form-pair"><label>Rebuild at (hour, UTC)<input name="hour" type="number" min="0" max="23" value="{{settings.updates.hour}}"></label><label>Every, days<input name="every_days" type="number" min="1" max="90" value="{{settings.updates.every_days}}"></label></div>
+<p class="compact-note">Each PHP branch is rebuilt with fresh packages on this schedule; sites roll to the new image with the previous one retained. The <a href="/versions">PHP page</a> shows the runs.</p>
+<button>Save rebuilds</button></form></section>
+{% endif %}
+{% endblock %}

@@ -230,7 +230,10 @@ def copy_site(config, job):
     tag = 'hosting-site:' + job['id']
     snapshot = existing_snapshot(config, tag) if job.get('recover') else None
     if not snapshot:
-        output = execute(config, ['backup', '--json', '--quiet', '--host', 'reeve', '--tag', tag, str(root)], maximum=64 * 1024**2)
+        # Descriptive tags beside the identity, so a repository can be listed by site without reading manifests.
+        described = ['--tag', 'site-name:' + str(manifest.get('site_name', '')), '--tag', 'site-kind:' + str(manifest.get('site_kind', '')),
+                     '--tag', 'backup-kind:' + str(manifest.get('backup_kind', '')), '--tag', 'domain:' + str((manifest.get('domains') or [''])[0])]
+        output = execute(config, ['backup', '--json', '--quiet', '--host', 'reeve', '--tag', tag, *described, str(root)], maximum=64 * 1024**2)
         snapshot = snapshot_from_backup(output) or existing_snapshot(config, tag)
     if not snapshot: raise RemoteFailed('Remote site snapshot could not be identified; local backup retained.')
     if not HEX.fullmatch(snapshot): raise RemoteFailed('Invalid remote snapshot identity.')
@@ -350,6 +353,34 @@ def prune(ledger, config):
             finally: os.close(fd)
 
 
+RECORD_STATE = CONFIG.with_name('server-record-upload.json')
+
+
+def copy_record(ledger, config):
+    """The server record as its own snapshot, when its content changed since the last copy or a day passed.
+    Small and independent of the site copies; a failure here is not a cycle failure."""
+    from . import server_record
+    try:
+        server_record.write(ledger)
+        record = server_record.current()
+        if not record: return
+        identity = server_record.digest(record)
+        try: state = json.loads(RECORD_STATE.read_text())
+        except (OSError, ValueError): state = {}
+        fresh = state.get('destination') == config['destination'] and state.get('digest') == identity and time.time() - state.get('uploaded_at', 0) < 86400
+        if fresh: return
+        output = execute(config, ['backup', '--json', '--quiet', '--host', 'reeve', '--tag', server_record.TAG, str(server_record.RECORD)])
+        snapshot = snapshot_from_backup(output) or existing_snapshot(config, server_record.TAG)
+        if not snapshot: return
+        # Keep only the newest record snapshot: the old ones say nothing the new one does not.
+        execute(config, ['forget', '--quiet', '--tag', server_record.TAG, '--keep-last', '3'])
+        tmp = RECORD_STATE.with_name('.server-record-upload.new')
+        tmp.write_text(json.dumps({'destination': config['destination'], 'digest': identity, 'uploaded_at': time.time(), 'snapshot': snapshot}))
+        tmp.chmod(0o600); tmp.replace(RECORD_STATE)
+    except Exception:
+        return
+
+
 def cycle(ledger, config, force=False):
     if not config or not config.get('enabled', True): return
     destination = config['destination']; now = time.time()
@@ -389,6 +420,7 @@ def cycle(ledger, config, force=False):
                 raise
             with ledger.db() as db:
                 db.execute("UPDATE remote_copies SET snapshot=?,verified=?,error='' WHERE destination=? AND job_id=?", (snapshot, time.time(), destination, job['id']))
+        copy_record(ledger, config)
         if not pending(ledger, destination) and not pending_sites(ledger, destination): remote_retention(ledger, config)
     except RemoteFailed as exc: error = str(exc)
     except Exception: error = 'Remote copy failed; check the private configuration, repository and local artifacts. Local protection retained.'

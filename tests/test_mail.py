@@ -202,7 +202,7 @@ def test_a_failing_startup_recovery_is_reported_and_never_stops_the_worker(monke
     seen = []
     monkeypatch.setattr(sftp, 'recover', lambda ledger, host: seen.append('sftp ran'))
     monkeypatch.setattr(__import__('reeve.database_site', fromlist=['recover_usage']), 'recover_usage', lambda *a, **k: None)
-    for module in ('database_backup', 'content_site', 'toolbox', 'requests_site', 'site_rules', 'php_settings', 'site_backup'):
+    for module in ('database_backup', 'content_site', 'toolbox', 'requests_site', 'site_rules', 'php_settings', 'site_backup', 'restoration'):
         monkeypatch.setattr(__import__('reeve.' + module, fromlist=['recover']), 'recover', lambda *a, **k: None)
     logged = []
     assert worker.startup_recovery(None, None, log=logged.append) == ['mail']

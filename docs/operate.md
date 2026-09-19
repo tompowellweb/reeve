@@ -129,9 +129,9 @@ PHP sites send through the shared relay using `mail()` or SMTP at `mail:25`.
 Use **Allowed senders** for sender domains beyond the site's hostnames. The **Mail** page
 shows the queue, delivery failures and per-site counts.
 
-In `/srv/ops/server.yaml`, `mail.mode` selects `direct`, `relay`, `sink` for testing, or
-`"off"`. Relay mode also needs `mail.relayhost`. Set `mail.hostname` and `mail.public_ip`
-for the SPF guidance shown in the panel. After editing, restart the worker and apply the setup:
+On **Settings**, outbound mail is `direct`, `relay` to a smart host, `sink` for testing, or
+`off`; set the server's mail hostname and public address there too, then the relay is
+redeployed.
 
 ```sh
 sudo systemctl restart reeve-worker

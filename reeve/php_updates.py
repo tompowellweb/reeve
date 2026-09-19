@@ -29,9 +29,9 @@ REPORTS = OPS / 'panel/worker/php-rebuilds'
 DEFAULTS = {'hour': 4, 'every_days': 7}
 
 
-def policy():
+def policy(document=None):
     config = OPS / 'server.yaml'
-    values = (yaml.safe_load(config.read_text()) or {}).get('updates', {}) if config.exists() else {}
+    values = (document if document is not None else ((yaml.safe_load(config.read_text()) or {}) if config.exists() else {})).get('updates', {})
     if not isinstance(values, dict) or values.keys() - DEFAULTS.keys(): raise ValueError('Invalid updates policy in server.yaml')
     result = {**DEFAULTS, **values}
     if type(result['hour']) is not int or not 0 <= result['hour'] <= 23: raise ValueError('updates.hour must be 0 to 23')
