@@ -445,3 +445,27 @@ def test_create_form_offers_mariadb_first_with_the_profile_usage_and_the_site_pa
     job = ledger.content_jobs(ident)[0]
     assert job['kind'] == 'database-usage' and json.loads(job['payload']) == {'usage': 'standard'}
     assert client.post('/sites/dbsite/database-usage', data={'csrf': csrf(page), 'id': str(uuid.uuid4()), 'usage': 'huge'}).status_code == 400
+
+
+def test_recover_page_offers_one_source_and_a_contextual_restore(setup, monkeypatch, tmp_path):
+    from reeve import restoration
+    client, _, ledger = setup
+    live = ledger.submit(str(uuid.uuid4()), {'name': 'shop', 'domain': 'shop.example.com', 'runtime': 'php', 'php_version': '8.4'}); ledger.update(live['id'], 'succeeded', 'published')
+    monkeypatch.setattr(restoration, 'SCAN', tmp_path / 'scan.json')
+    backup = str(uuid.UUID(int=5)); dump = str(uuid.UUID(int=6)); other = str(uuid.UUID(int=7))
+    restoration.write_scan({'state': 'succeeded', 'source': 'local', 'finished_at': 1.0, 'unread': 0, 'record': None, 'sites': [
+        {'name': 'shop', 'site_kind': 'managed', 'runtime': 'php', 'domains': ['shop.example.com'], 'live': {'name': 'shop', 'managed': True, 'id': live['id']},
+         'backups': [{'id': backup, 'source': 'local', 'snapshot': '', 'completed_at': 2.0, 'bytes': 10, 'has_dump': True, 'kind': 'site', 'site_name': 'shop'}],
+         'dumps': [{'id': dump, 'source': 'local', 'snapshot': '', 'completed_at': 3.0, 'engine': 'mariadb', 'kind': 'dump', 'site_name': 'shop'}]},
+        {'name': 'blog', 'site_kind': 'managed', 'runtime': 'static', 'domains': ['blog.example'], 'live': None,
+         'backups': [{'id': other, 'source': 'local', 'snapshot': '', 'completed_at': 2.0, 'bytes': 10, 'has_dump': False, 'kind': 'site', 'site_name': 'blog'}], 'dumps': []}]})
+    login(client)
+    page = client.get('/recover').text
+    assert 'value="site:' + backup + '"' in page and 'value="dump:' + dump + '"' in page   # one From choice per site
+    assert 'name="as-0"' in page and 'Into shop: files and database' in page and 'name="target-0" value="shop"' in page   # live site: contextual
+    assert 'name="as-1" value="new"' in page and 'name="name-1" value="blog"' in page and 'name="domains-1" value="blog.example"' in page  # not live: a new site
+    reply = client.post('/recover/submit', data={'csrf': csrf(client.get('/recover')), 'include': ['0', '1'], 'from-0': 'dump:' + dump, 'as-0': 'both', 'target-0': 'shop', 'name-0': '', 'domains-0': '',
+                                                  'from-1': 'site:' + other, 'as-1': 'new', 'name-1': 'blog', 'domains-1': 'blog.example www.blog.example'})
+    assert reply.status_code == 200 and 'Recoveries' in reply.text
+    rows = restoration.recoveries(ledger)
+    assert sorted((r['mode'], r['backup_id']) for r in rows) == sorted([('dump', dump), ('new', other)])

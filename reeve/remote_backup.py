@@ -216,7 +216,8 @@ def copy(config, job):
     # A lost receipt after publication is recovered by tag; a fresh copy needs no listing first.
     snapshot = existing_snapshot(config, tag) if job.get('recover') else None
     if not snapshot:
-        output = execute(config, ['backup', '--json', '--quiet', '--host', 'reeve', '--tag', tag,
+        described = ['--tag', 'site-name:' + str(manifest.get('site_name', '')), '--tag', 'engine:' + str(manifest.get('engine', ''))]
+        output = execute(config, ['backup', '--json', '--quiet', '--host', 'reeve', '--tag', tag, *described,
                                   str(root / 'manifest.json'), str(root / manifest['file'])])
         snapshot = snapshot_from_backup(output) or existing_snapshot(config, tag)
     if not snapshot: raise RemoteFailed('Remote snapshot could not be identified; local dump retained.')

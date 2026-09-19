@@ -93,13 +93,19 @@ def entry_from_manifest(manifest, source, snapshot=''):
 
 
 def entry_from_tags(snapshot):
-    """Pure: a site backup described by its snapshot's tags alone (the manifest is read only when needed)."""
+    """Pure: a site backup or a dump described by its snapshot's tags alone (the manifest is read only when needed)."""
     tags = dict(t.split(':', 1) for t in snapshot.get('tags', []) if ':' in t)
-    if 'hosting-site' not in tags or 'site-name' not in tags: return None
-    return {'kind': 'site', 'id': tags['hosting-site'], 'source': 'repository', 'snapshot': snapshot['id'], 'site_id': None,
-            'site_name': tags['site-name'], 'site_kind': tags.get('site-kind'), 'runtime': None, 'domains': [tags['domain']] if tags.get('domain') else [],
-            'backup_kind': tags.get('backup-kind'), 'completed_at': snapshot_time(snapshot.get('time')), 'coverage': None, 'bytes': None,
-            'has_dump': None, 'engine': None, 'from_tags': True}
+    if 'site-name' not in tags: return None
+    if 'hosting-site' in tags:
+        return {'kind': 'site', 'id': tags['hosting-site'], 'source': 'repository', 'snapshot': snapshot['id'], 'site_id': None,
+                'site_name': tags['site-name'], 'site_kind': tags.get('site-kind'), 'runtime': None, 'domains': [tags['domain']] if tags.get('domain') else [],
+                'backup_kind': tags.get('backup-kind'), 'completed_at': snapshot_time(snapshot.get('time')), 'coverage': None, 'bytes': None,
+                'has_dump': None, 'engine': None, 'from_tags': True}
+    if 'hosting-db' in tags:
+        return {'kind': 'dump', 'id': tags['hosting-db'], 'source': 'repository', 'snapshot': snapshot['id'], 'site_id': None,
+                'site_name': tags['site-name'], 'engine': tags.get('engine'), 'completed_at': snapshot_time(snapshot.get('time')),
+                'bytes': None, 'consistency': None, 'from_tags': True}
+    return None
 
 
 def snapshot_time(text):
@@ -147,21 +153,27 @@ def scan_folder(folder):
     return found, record
 
 
-def scan_repository(config, budget=600):
+def scan_repository(config, budget=600, progress=None):
     """Every site backup and dump in the repository, by tags where the copy carried them and by the manifest
-    otherwise (read once, then cached), plus the newest server record."""
+    otherwise (read once, then cached; newest first, so a slow repository loses old entries to the budget,
+    not recent ones), plus the newest server record. `progress(done, total)` is told every few reads."""
     from . import remote_backup as remote
     from .server_record import parse, RECORD, TAG
     started = time.monotonic()
     listing = json.loads(remote.execute(config, ['snapshots', '--json'], maximum=32 * 1024 ** 2))
-    found = []; record = None; unread = 0
+    listing.sort(key=lambda s: s.get('time') or '', reverse=True)
+    found = []; record = None; unread = 0; done = 0
     for snapshot in listing:
         tags = snapshot.get('tags', [])
         identity = next((t.split(':', 1)[1] for t in tags if t.startswith(('hosting-site:', 'hosting-db:'))), None)
         if TAG in tags:
             continue
         if not identity or not re.fullmatch(r'[0-9a-f-]{36}', identity): continue
+        done += 1
+        if progress and done % 5 == 0: progress(done, len(listing))
         manifest = cached_manifest(identity)
+        if manifest is None and entry_from_tags(snapshot):
+            found.append(entry_from_tags(snapshot)); continue   # described by its tags: no read needed
         if manifest is None:
             paths = snapshot.get('paths') or []
             manifest_path = next((p for p in paths if p.endswith('manifest.json')), None) or (paths[0].rstrip('/') + '/manifest.json' if paths else None)
@@ -222,15 +234,17 @@ def perform_scan(ledger):
     try: request = json.loads(REQUEST.read_text())
     except (OSError, ValueError): REQUEST.unlink(missing_ok=True); return False
     REQUEST.unlink(missing_ok=True)
-    result = {'state': 'running', 'source': request['source'], 'folder': request.get('folder', ''), 'started_at': time.time()}
+    result = {'state': 'running', 'source': request['source'], 'folder': request.get('folder', ''), 'started_at': time.time(), 'progress': ''}
     write_scan(result)
+    def progress(done, total):
+        write_scan({**result, 'progress': f'read {done} of {total} snapshots'})
     try:
         entries, record, unread = [], None, 0
         if request['source'] == 'repository':
             from . import remote_backup as remote
             config = remote.settings()
             if not config: raise ValueError('No backup destination is connected')
-            entries, record, unread = scan_repository(config)
+            entries, record, unread = scan_repository(config, progress=progress)
         elif request['source'] == 'folder':
             entries, record = scan_folder(request['folder'])
         local, _ = scan_local()
@@ -270,8 +284,13 @@ def submit(ledger, items):
     queued = []
     for item in items:
         mode = item.get('mode')
+        # The page names its source as "site:<id>" or "dump:<id>"; a dump can only go into a live site's database.
+        backup = str(item.get('backup', ''))
+        kind, backup = backup.split(':', 1) if backup.startswith(('site:', 'dump:')) else (('dump' if mode == 'dump' else 'site'), backup)
+        if kind == 'dump': mode = 'dump'
         if mode not in MODES: raise ValueError('Unknown recovery mode')
-        entry = find_entry(scan, 'dump' if mode == 'dump' else 'site', str(item.get('backup', '')))
+        if kind == 'dump' and not item.get('target'): raise ValueError('A database dump can only be restored into a live site')
+        entry = find_entry(scan, kind, backup)
         if not entry: raise ValueError('That backup is not in the last scan')
         row = {'id': str(uuid.uuid4()), 'source': entry['source'], 'backup_id': entry['id'], 'snapshot': entry.get('snapshot') or '', 'mode': mode,
                'target': '', 'name': '', 'domains': '[]', 'site_name': entry.get('site_name') or '', 'phase': '', 'state': 'queued', 'step': 'queued', 'error': ''}

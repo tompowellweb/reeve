@@ -134,3 +134,33 @@ def test_scan_requests_are_recorded_and_performed(world, monkeypatch):
     monkeypatch.setattr('reeve.remote_backup.settings', lambda require_id=True: None)
     rs.perform_scan(ledger)
     assert rs.read_scan()['state'] == 'failed' and 'No backup destination' in rs.read_scan()['error']
+
+
+def test_the_pages_source_choice_names_a_backup_or_a_dump(world):
+    ledger, live, scan = world
+    shop_backup = scan['sites'][0]['backups'][0]['id']; dump = scan['sites'][0]['dumps'][0]['id']
+    with pytest.raises(ValueError, match='only be restored into a live site'): rs.submit(ledger, [{'backup': 'dump:' + dump, 'mode': 'new', 'name': 'x', 'domains': 'x.example'}])
+    queued = rs.submit(ledger, [{'backup': 'dump:' + dump, 'mode': 'both', 'target': 'shop'}, {'backup': 'site:' + shop_backup, 'mode': 'files', 'target': 'shop'}])
+    rows = {r['id']: r for r in rs.recoveries(ledger)}
+    assert rows[queued[0]]['mode'] == 'dump' and rows[queued[0]]['backup_id'] == dump  # a dump means the database, whatever the page's other choice
+    assert rows[queued[1]]['mode'] == 'files' and rows[queued[1]]['backup_id'] == shop_backup
+
+
+def test_tagged_dump_snapshots_need_no_manifest_and_newest_are_read_first(monkeypatch, tmp_path):
+    monkeypatch.setattr(rs, 'MANIFESTS', tmp_path / 'manifests')
+    listing = [
+        {'id': 'old', 'time': '2026-09-18T03:00:00Z', 'tags': ['hosting-site:' + str(uuid.UUID(int=1))], 'paths': ['/srv/backups/staging/site/' + str(uuid.UUID(int=1))]},
+        {'id': 'new', 'time': '2026-09-19T03:00:00Z', 'tags': ['hosting-db:' + str(uuid.UUID(int=2)), 'site-name:shop', 'engine:mariadb'], 'paths': ['/x/manifest.json', '/x/database.sql']},
+    ]
+    calls = []
+    def execute(config, args, maximum=0):
+        calls.append(args)
+        if args[0] == 'snapshots' and '--tag' in args: return '[]'
+        if args[0] == 'snapshots': return json.dumps(listing)
+        return json.dumps({**SITE_MANIFEST, 'operation': str(uuid.UUID(int=1))})
+    monkeypatch.setattr('reeve.remote_backup.execute', execute)
+    progress = []
+    found, record, unread = rs.scan_repository({}, progress=lambda d, t: progress.append((d, t)))
+    assert [e['id'] for e in found] == [str(uuid.UUID(int=2)), str(uuid.UUID(int=1))]  # newest first; the dump came from its tags
+    assert found[0]['kind'] == 'dump' and found[0]['engine'] == 'mariadb' and found[0]['from_tags']
+    assert sum(1 for c in calls if c[0] == 'dump') == 1 and unread == 0 and record is None  # one manifest read, for the untagged copy

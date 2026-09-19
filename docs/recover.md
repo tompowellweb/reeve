@@ -38,12 +38,14 @@ to restore only those.
 
 ## Roll a live site back
 
-On **Recover**, scan the repository or this server's own copies, tick the site and choose:
+On **Recover**, scan the repository or this server's own copies and tick the site. **From** is
+the point in time: a complete backup or a database dump. **Restore** depends on whether the
+site is live on this server:
 
-- **files and database** from a chosen backup: the site as it was then;
-- **files only** or **database only** from a chosen backup;
-- **database from a chosen dump**: the most recent database dump, useful after rolling files
-  back to an earlier day on a site whose orders must stay current.
+- a live site takes the backup as files and database, files only or database only, or the
+  chosen dump as its database; the most recent dump is the usual pick after rolling files back
+  to an earlier day on a site whose orders must stay current;
+- a site that is not live here comes back as a new site, name and hostnames prefilled.
 
 A restore into a live site takes a complete backup of it first, listed on the site's Backups
 page as `pre-restore`.

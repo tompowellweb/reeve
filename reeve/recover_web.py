@@ -33,9 +33,10 @@ def routes(app, session, mutation, render, call):
             if key == 'include': items.append(str(value))
         picks = []
         for index in items:
-            mode = str(form.get('mode-' + index, 'new'))
-            picks.append({'backup': str(form.get('dump-' + index if mode == 'dump' else 'backup-' + index, '')), 'mode': mode,
-                          'name': str(form.get('name-' + index, '')), 'domains': str(form.get('domains-' + index, '')), 'target': str(form.get('target-' + index, ''))})
+            mode = str(form.get('as-' + index, 'new'))
+            picks.append({'backup': str(form.get('from-' + index, '')), 'mode': mode,
+                          'name': str(form.get('name-' + index, '')), 'domains': str(form.get('domains-' + index, '')),
+                          'target': str(form.get('target-' + index, '')) if mode != 'new' else ''})
         try: call({'op': 'recover-submit', 'items': picks})
         except (ValueError, OSError) as exc: return page(request, error=str(exc))
         return RedirectResponse('/recover#progress', 303)

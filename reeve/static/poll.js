@@ -1,4 +1,4 @@
-const operations = document.querySelectorAll('#operation, #domain-operation, #runtime-operation, #catalogue-operation, #database-operation, #database-catalogue-operation, #backup-operation');
+const operations = document.querySelectorAll('#operation, #domain-operation, #runtime-operation, #catalogue-operation, #database-operation, #database-catalogue-operation, #backup-operation, #recovery-scan, #progress');
 if ([...operations].some(operation => ['queued', 'running'].includes(operation.dataset.state))) {
   const refreshOperation = async () => {
     if (document.querySelector('dialog[open], [data-concern-panel]:not([hidden])')) { window.setTimeout(refreshOperation, 2500); return; }
@@ -34,3 +34,18 @@ if (dbEngine) {
   dbEngine.addEventListener('change', updateDatabase);
   updateDatabase();
 }
+
+document.querySelectorAll('[data-recover-row]').forEach(row => {
+  const from = row.querySelector('[data-from]'); const as = row.querySelector('[data-as]'); const fields = row.querySelector('[data-new-site]');
+  const update = () => {
+    const dump = from && from.selectedOptions[0] && from.selectedOptions[0].dataset.kind === 'dump';
+    if (as) {
+      [...as.options].forEach(option => { option.disabled = dump ? option.value !== 'database' : false; option.hidden = option.disabled; });
+      if (dump) as.value = 'database';
+    }
+    if (fields) fields.hidden = !(as ? as.value === 'new' : true) || dump;
+  };
+  if (from) from.addEventListener('change', update);
+  if (as) as.addEventListener('change', update);
+  update();
+});
