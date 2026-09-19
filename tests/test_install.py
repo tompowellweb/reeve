@@ -89,3 +89,49 @@ def test_the_image_takes_the_chosen_share_but_leaves_the_root_its_reserve():
     assert installer.image_size(50 * gib, 30) == 15 * gib
     with pytest.raises(SystemExit, match='Free space, attach a volume'): installer.image_size(15 * gib, 80)
     assert installer.amend_fstab('UUID=root / ext4 errors=remount-ro 0 1\n', '/srv', '/var/lib/reeve/srv.img', 'xfs', 'loop,prjquota').splitlines()[-1] == '/var/lib/reeve/srv.img /srv xfs loop,prjquota 0 0'
+
+
+def test_only_empty_disks_and_partitions_of_a_usable_size_are_offered():
+    gib = 1024 ** 3
+    listing = [
+        {'path': '/dev/vda', 'type': 'disk', 'size': 30 * gib, 'fstype': None, 'pttype': 'gpt', 'mountpoint': None},   # partitioned
+        {'path': '/dev/vda1', 'type': 'part', 'size': 29 * gib, 'fstype': 'ext4', 'pttype': 'gpt', 'mountpoint': '/'},
+        {'path': '/dev/vda15', 'type': 'part', 'size': 124 * 1024 ** 2, 'fstype': None, 'pttype': 'gpt', 'mountpoint': None},  # too small
+        {'path': '/dev/vda3', 'type': 'part', 'size': 25 * gib, 'fstype': None, 'pttype': 'gpt', 'mountpoint': None},  # spare partition
+        {'path': '/dev/vdb', 'type': 'disk', 'size': 40 * gib, 'fstype': None, 'pttype': None, 'mountpoint': None},   # empty disk
+        {'path': '/dev/vdc', 'type': 'disk', 'size': 40 * gib, 'fstype': 'xfs', 'pttype': None, 'mountpoint': None},  # holds a filesystem
+        {'path': '/dev/sr0', 'type': 'rom', 'size': 379 * 1024, 'fstype': 'iso9660', 'pttype': None, 'mountpoint': None},
+        {'path': '/dev/zram0', 'type': 'disk', 'size': 8 * gib, 'fstype': 'swap', 'pttype': None, 'mountpoint': '[SWAP]'},
+        {'path': '/dev/loop0', 'type': 'loop', 'size': 8 * gib, 'fstype': None, 'pttype': None, 'mountpoint': None},
+        {'path': '/dev/vdd', 'type': 'disk', 'size': '40000000000', 'fstype': None, 'pttype': None, 'mountpoint': None},  # older lsblk: strings
+    ]
+    assert installer.empty_devices(listing) == [
+        ('/dev/vda3', 25 * gib, 'empty partition'), ('/dev/vdb', 40 * gib, 'empty disk'), ('/dev/vdd', 40000000000, 'empty disk')]
+
+
+def test_the_data_menu_lists_devices_then_the_image_when_the_root_has_room():
+    gib = 1024 ** 3
+    devices = [('/dev/vdb', 40 * gib, 'empty disk')]
+    labels = [label for label, _ in installer.data_choices(devices, 32 * gib)]
+    assert labels == ['/dev/vdb          40 GB  empty disk', 'An XFS image file on the root filesystem (about 32 GB)']
+    assert [action for _, action in installer.data_choices(devices, 32 * gib)] == [('format', '/dev/vdb'), ('image', None)]
+    assert installer.data_choices(devices, None) == [('/dev/vdb          40 GB  empty disk', ('format', '/dev/vdb'))]  # root too small
+    assert installer.data_choices([], None) == []
+
+
+def test_the_choice_is_asked_only_when_there_is_one_to_make(monkeypatch):
+    gib = 1024 ** 3
+    listing = {'blockdevices': [{'path': '/dev/vdb', 'type': 'disk', 'size': 40 * gib, 'fstype': None, 'pttype': None, 'mountpoint': None}]}
+    monkeypatch.setattr(installer, 'run', lambda *a: json.dumps(listing))
+    monkeypatch.setattr(installer, 'root_free', lambda: 50 * gib)
+    answers = iter(['', '9', '2'])
+    monkeypatch.setattr('builtins.input', lambda prompt: next(answers))
+    assert installer.choose_data(80) == ('image', 'menu')  # two bad answers, then the image
+    answers = iter(['/dev/vdb'])
+    assert installer.choose_data(80) == ('format', '/dev/vdb')  # the path itself is accepted
+    answers = iter(['x', 'x', 'x'])
+    with pytest.raises(SystemExit, match='Nothing chosen'): installer.choose_data(80)
+    monkeypatch.setattr(installer, 'run', lambda *a: json.dumps({'blockdevices': []}))
+    assert installer.choose_data(80) == ('image', None)  # only the image: its own question asks
+    monkeypatch.setattr(installer, 'root_free', lambda: 12 * gib)
+    with pytest.raises(SystemExit, match='Free space, attach a volume'): installer.choose_data(80)

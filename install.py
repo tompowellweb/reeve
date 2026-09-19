@@ -8,10 +8,11 @@ The installer adopts what exists and builds what is missing:
 - A quota-enabled XFS filesystem mounted at /srv is adopted. An XFS /srv without project quotas
   gets prjquota added to its mount options and is remounted (or asks for a reboot when busy). An
   empty non-XFS /srv is formatted as XFS with the operator's yes (--format-data without a
-  terminal). Without a mount, --data-device names an empty disk or partition that is formatted,
-  added to fstab and mounted; without that either, an XFS image file on the root filesystem
-  is offered (--data-image accepts it, --data-percent sizes it, the root keeps 10 GB).
-  Anything carrying a signature is refused; the installer never partitions.
+  terminal). Without a mount, the installer lists the empty disks and partitions it can see and
+  an XFS image file on the root filesystem, and asks which should hold the data; a device is
+  formatted, added to fstab and mounted, the image is created (--data-percent sizes it, the root
+  keeps 10 GB). Without a terminal, --data-device names the device or --data-image accepts the
+  image. Anything carrying a signature is refused; the installer never partitions.
 - Rootful Docker with overlay2 under /srv/docker is adopted. Without Docker, it is installed with
   the daemon and containerd settings, the quota projects and the journal cap.
 - The checked-out tree becomes a release under /opt/reeve/releases/<commit>, its tag (or version
@@ -136,6 +137,60 @@ ROOT_RESERVE = 10 * 1024 ** 3   # the root filesystem keeps at least this much f
 IMAGE_MINIMUM = 8 * 1024 ** 3   # below this the data space is not worth having
 
 
+DEVICE_MINIMUM = 1024 ** 3      # smaller empty devices are leftovers, not offered
+
+
+def root_free():
+    info = os.statvfs(IMAGE.parent.parent if IMAGE.parent.exists() else "/var")
+    return info.f_bavail * info.f_frsize
+
+
+def empty_devices(devices):
+    """Pure: from lsblk's flat list, the disks and partitions with no filesystem, no partition table (a partition
+    reports its table's type, so only disks are judged by it), no mount and a usable size, as (path, bytes, kind)."""
+    found = []
+    for device in devices:
+        kind = device.get("type")
+        if kind not in ("disk", "part") or device.get("fstype") or device.get("mountpoint") or device.get("children"): continue
+        if kind == "disk" and device.get("pttype"): continue
+        size = int(device.get("size") or 0)
+        if size < DEVICE_MINIMUM: continue
+        found.append((device["path"], size, "empty disk" if kind == "disk" else "empty partition"))
+    return found
+
+
+def data_choices(candidates, image):
+    """Pure: the menu of places the data can live, each empty device then the image file when the root has room,
+    as (label, (action, device))."""
+    options = [(f"{path:<14} {size / 1024 ** 3:5.0f} GB  {kind}", ("format", path)) for path, size, kind in candidates]
+    if image is not None:
+        options.append((f"An XFS image file on the root filesystem (about {image / 1024 ** 3:.0f} GB)", ("image", None)))
+    return options
+
+
+def choose_data(percent):
+    """Nothing is mounted at /srv and no flag decided: show the empty devices and the image file, ask which.
+    Returns (action, device); ("image", "menu") when the image was picked from a real choice, ("image", None) when
+    it was the only option, so the image's own question still asks."""
+    listing = json.loads(run("lsblk", "-J", "-b", "-o", "PATH,TYPE,SIZE,FSTYPE,PTTYPE,MOUNTPOINT"))["blockdevices"]
+    candidates = empty_devices(listing)
+    try: image = image_size(root_free(), percent)
+    except SystemExit as stop: image, why = None, str(stop)
+    options = data_choices(candidates, image)
+    if not options: raise SystemExit(why)
+    if len(options) == 1 and options[0][1] == ("image", None): return ("image", None)
+    say("Where should the site data live? Devices carrying a filesystem or partition table are not offered; "
+        "wipe a spare one with wipefs -a to offer it.")
+    for number, (label, _) in enumerate(options, 1): say(f"  {number}. {label}")
+    for _ in range(3):
+        answer = input(f"Choose [1-{len(options)}]: ").strip()
+        if answer.isdigit() and 1 <= int(answer) <= len(options): action, device = options[int(answer) - 1][1]
+        elif any(device == answer for _, (action, device) in options): action, device = "format", answer
+        else: continue
+        return (action, device or "menu")
+    raise SystemExit("Nothing chosen. Run the installer again, or pass --data-device or --data-image.")
+
+
 def image_size(free, percent):
     """Pure: the image file's size from the root's free space and the chosen share, keeping the reserve."""
     size = min(free * percent // 100, free - ROOT_RESERVE)
@@ -150,8 +205,7 @@ def data_image(percent, assume_yes):
     """No separate filesystem: an XFS image file on the root filesystem, mounted at /srv through a loop device."""
     if IMAGE.exists():
         raise SystemExit(f"{IMAGE} exists but is not mounted at /srv; mount it (its fstab entry may be missing) or move it away")
-    info = os.statvfs(IMAGE.parent.parent if IMAGE.parent.exists() else "/var")
-    free = info.f_bavail * info.f_frsize
+    free = root_free()
     size = image_size(free, percent)
     question = (f"Nothing separate is mounted at /srv. Create a {size / 1024 ** 3:.0f} GB data image ({percent}% of the root's "
                 f"{free / 1024 ** 3:.0f} GB free, keeping {ROOT_RESERVE // 1024 ** 3} GB for the system) at {IMAGE}? "
@@ -195,7 +249,10 @@ def data_filesystem(device, assume_yes=False, image=False, percent=80):
         empty = [p.name for p in Path("/srv").iterdir()] == ["lost+found"]
     plan = plan_data(mount, device, empty)
     if plan == "format": format_device(device)
-    elif plan == "image": data_image(percent, assume_yes or image)
+    elif plan == "image":
+        action, chosen = ("image", None) if image or not sys.stdin.isatty() else choose_data(percent)
+        if action == "format": format_device(chosen)
+        else: data_image(percent, assume_yes or image or chosen == "menu")
     elif plan == "format-mounted": format_mounted(mount, assume_yes)
     elif plan == "amend":
         say(f"/srv is XFS on {mount['source']} without project quotas: adding prjquota to its mount options")
@@ -453,7 +510,7 @@ def first_password(python, release):
 
 def main():
     parser = argparse.ArgumentParser(description="Install or update Reeve from this checkout.")
-    parser.add_argument("--data-device", help="an empty disk or partition to format as the XFS data filesystem when /srv is not mounted")
+    parser.add_argument("--data-device", help="the empty disk or partition to format as the XFS data filesystem when /srv is not mounted (otherwise the installer lists them and asks)")
     parser.add_argument("--format-data", action="store_true", help="say yes to formatting an empty non-XFS filesystem mounted at /srv")
     parser.add_argument("--data-image", action="store_true", help="say yes to a data image file on the root filesystem when nothing separate exists")
     parser.add_argument("--data-percent", type=int, default=80, help="the share of the root's free space the image may take (default 80)")

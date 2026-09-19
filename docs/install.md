@@ -5,7 +5,8 @@ This guide installs Reeve on a Debian 13 server and opens the panel through SSH.
 ## Requirements
 
 - A minimal Debian 13 amd64 installation, with at least 2 GB of RAM.
-- An administrator account with SSH key access and sudo.
+- An administrator account with SSH key access and sudo, not root itself. See
+  [If you only have root](#if-you-only-have-root).
 - Access to Debian and Docker package repositories and container registries.
 - Somewhere for the data: a separate partition or volume is best; a single-disk server works
   too. See [Where the data lives](#where-the-data-lives).
@@ -13,21 +14,40 @@ This guide installs Reeve on a Debian 13 server and opens the panel through SSH.
 The installer sets up Docker, XFS project quotas and the panel services. An existing Docker
 installation must use rootful overlay2 with its data under `/srv/docker`.
 
+## If you only have root
+
+Many providers hand over a server with an SSH key on `root` and no other account. Logged in
+as root, create the administrator, give it your key and a password for sudo, then close root
+logins:
+
+```sh
+apt-get install -y sudo
+adduser admin
+usermod -aG sudo admin
+mkdir -m 700 /home/admin/.ssh
+cp /root/.ssh/authorized_keys /home/admin/.ssh/
+chown -R admin:admin /home/admin/.ssh
+```
+
+Check `ssh admin@server` and `sudo -v` work from a second terminal before continuing. Then
+add `PermitRootLogin no` and `PasswordAuthentication no` to `/etc/ssh/sshd_config.d/local.conf`
+and run `systemctl restart ssh`. Use the new account for everything below.
+
 ## Install Reeve
 
-The example below installs release `v1.1.8`. Replace `/dev/vdb` with the empty data device
-you intend to use: **the installer will format it**. On a single-disk server leave the option
-out and accept the data image the installer offers.
+The example below installs release `v1.1.9`.
 
 ```sh
 sudo apt-get install -y git
 git clone https://github.com/tompowellweb/reeve.git
 cd reeve
-git checkout v1.1.8
-sudo python3 install.py --data-device /dev/vdb
+git checkout v1.1.9
+sudo python3 install.py
 ```
 
-Keep the operator password printed at the end of installation.
+The installer asks where the site data should live, listing the empty disks and partitions it
+finds and an image file on the root filesystem. **The device you choose is formatted.** Keep the
+operator password printed at the end of installation.
 
 ## Where the data lives
 
@@ -36,14 +56,14 @@ project quotas, which is how each site gets a hard disk limit. Three ways to pro
 first:
 
 1. **A separate partition or volume.** When installing Debian, give the root 15–20 GB and leave
-   the rest for a second partition; or attach a block storage volume from your provider. Pass it
-   to the installer with `--data-device`. It is formatted only if it is empty.
-2. **An image file on the root filesystem**, for a VPS with one disk and no volume. When nothing
-   separate is mounted at `/srv`, the installer offers to create `/var/lib/reeve/srv.img` as XFS
-   and mount it there. It takes 80% of the root's free space by default and always leaves the
-   system at least 10 GB; `--data-percent 60` changes the share and `--data-image` says yes
-   without a terminal. The cost is one extra filesystem layer and a little throughput. To grow it
-   later:
+   the rest for a second partition; or attach a block storage volume from your provider. The
+   installer offers it if it is empty: a device carrying a filesystem or partition table is not
+   listed, so wipe a spare one first with `wipefs -a`. Without a terminal, `--data-device` names it.
+2. **An image file on the root filesystem**, for a VPS with one disk and no volume. The installer
+   offers to create `/var/lib/reeve/srv.img` as XFS and mount it at `/srv`. It takes 80% of the
+   root's free space by default and always leaves the system at least 10 GB; `--data-percent 60`
+   changes the share and `--data-image` says yes without a terminal. The cost is one extra
+   filesystem layer and a little throughput. To grow it later:
 
    ```sh
    sudo truncate -s +20G /var/lib/reeve/srv.img
