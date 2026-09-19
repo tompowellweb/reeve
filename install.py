@@ -28,6 +28,7 @@ import os
 import pwd
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tarfile
@@ -500,12 +501,25 @@ def record(release, commit, version, modified, previous, source_url):
     return entry
 
 
+def server_address():
+    """The address an SSH forward should use: the source address of the default route, else the hostname."""
+    try:
+        return json.loads(run("ip", "-j", "route", "get", "1.1.1.1"))[0].get("prefsrc") or socket.gethostname()
+    except (subprocess.CalledProcessError, ValueError, IndexError, OSError):
+        return socket.gethostname()
+
+
+def forward_command(user, address):
+    """Pure: the SSH forward that reaches the panel from the operator's own computer."""
+    return f"ssh -N -L 127.0.0.1:8088:127.0.0.1:8088 {user}@{address}"
+
+
 def first_password(python, release):
     """The first install makes the operator password and prints it once; a reinstall leaves it alone."""
     output = run("runuser", "-u", "hosting-web", "--", python, "-m", "reeve.setup", "password-if-missing", cwd=release)
     if output:
         say("\n" + "=" * 72 + f"\nOperator password (shown once, not stored anywhere else):\n\n    {output}\n\n"
-            "Reach the panel through an SSH forward of port 8088 and sign in; change it any time with: sudo reeve password\n" + "=" * 72)
+            "Change it any time with: sudo reeve password\n" + "=" * 72)
 
 
 def main():
@@ -545,6 +559,8 @@ def main():
     mail(python, release)
     first_password(python, release)
     say(json.dumps({k: entry[k] for k in ("version", "current", "previous", "modified")}))
+    say(f"\nReach the panel from your own computer with this forward, then open http://127.0.0.1:8088\n\n"
+        f"    {forward_command(os.environ.get('SUDO_USER') or 'root', server_address())}\n")
 
 
 if __name__ == "__main__":

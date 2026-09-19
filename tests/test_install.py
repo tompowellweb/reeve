@@ -135,3 +135,12 @@ def test_the_choice_is_asked_only_when_there_is_one_to_make(monkeypatch):
     assert installer.choose_data(80) == ('image', None)  # only the image: its own question asks
     monkeypatch.setattr(installer, 'root_free', lambda: 12 * gib)
     with pytest.raises(SystemExit, match='Free space, attach a volume'): installer.choose_data(80)
+
+
+def test_the_forward_command_names_the_installing_account_and_the_servers_address(monkeypatch):
+    assert installer.forward_command('admin', '144.126.207.172') == 'ssh -N -L 127.0.0.1:8088:127.0.0.1:8088 admin@144.126.207.172'
+    monkeypatch.setattr(installer, 'run', lambda *a: json.dumps([{'dst': '1.1.1.1', 'dev': 'eth0', 'prefsrc': '10.0.0.5'}]))
+    assert installer.server_address() == '10.0.0.5'
+    monkeypatch.setattr(installer, 'run', lambda *a: (_ for _ in ()).throw(subprocess.CalledProcessError(2, 'ip')))
+    monkeypatch.setattr(installer.socket, 'gethostname', lambda: 'server')
+    assert installer.server_address() == 'server'  # no default route: the hostname stands in

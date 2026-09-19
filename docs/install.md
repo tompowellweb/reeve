@@ -35,13 +35,13 @@ and run `systemctl restart ssh`. Use the new account for everything below.
 
 ## Install Reeve
 
-The example below installs release `v1.1.9`.
+The example below installs release `v1.1.10`.
 
 ```sh
 sudo apt-get install -y git
 git clone https://github.com/tompowellweb/reeve.git
 cd reeve
-git checkout v1.1.9
+git checkout v1.1.10
 sudo python3 install.py
 ```
 
@@ -87,7 +87,7 @@ On your own computer, open an SSH tunnel:
 ssh -N -L 127.0.0.1:8088:127.0.0.1:8088 admin@server
 ```
 
-Replace `admin@server` with your SSH account and server address. Open
+The installer prints this command with your account and the server's address. Open
 [http://127.0.0.1:8088](http://127.0.0.1:8088) and enter the operator password.
 The panel listens on the server's loopback address. Keep administration behind SSH or a VPN.
 
