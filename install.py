@@ -550,6 +550,7 @@ def main():
     data_filesystem(args.data_device, args.format_data, args.data_image, args.data_percent)
     docker_engine()
     daemon_setting("userland-proxy", False)
+    Path("/etc/reeve").mkdir(mode=0o700, exist_ok=True)   # secure mode's firewall rules live here, writable by the worker
     # Sites over IPv6: the engine publishes on both families once it restarts with these; a private ULA range for containers.
     daemon_setting("ipv6", True); daemon_setting("fixed-cidr-v6", "fd5e:1e2e:1::/64"); daemon_setting("ip6tables", True)
     commit, version, modified, archive, changed = tree(source, args.commit, args.allow_modified)

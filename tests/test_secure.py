@@ -48,7 +48,7 @@ def test_unlock_requests_match_the_current_token_only():
 def box(tmp_path, monkeypatch):
     root = tmp_path / 'secure'
     monkeypatch.setattr(secure, 'ROOT', root); monkeypatch.setattr(secure, 'STATE', root / 'state.json')
-    monkeypatch.setattr(secure, 'RULES', tmp_path / 'reeve-firewall.nft'); monkeypatch.setattr(secure, 'UNIT', tmp_path / 'reeve-firewall.service')
+    monkeypatch.setattr(secure, 'RULES', tmp_path / 'reeve/firewall.nft'); monkeypatch.setattr(secure, 'UNIT', tmp_path / 'reeve-firewall.service')
     monkeypatch.setattr(secure, 'WG_CONF', tmp_path / 'wg0.conf'); monkeypatch.setattr(secure, 'WEB_DROPIN', tmp_path / 'dropin/secure.conf')
     monkeypatch.setattr(secure, 'UNMATCHED_LOG', tmp_path / '_unmatched.log')
     calls = []

@@ -5,7 +5,7 @@ after a live handshake), confirm within fifteen minutes or the lockdown reverts.
 token in a URL the edge logs and the worker acts on, opening port 22 to that address for thirty minutes.
 
 State lives root-only under /srv/ops/panel/worker/secure/: state.json, the server and client keys, the
-unlock token. The rules file is /etc/reeve-firewall.nft, loaded by reeve-firewall.service before Docker.
+unlock token. The rules file is /etc/reeve/firewall.nft, loaded by reeve-firewall.service before Docker.
 sshd is untouched: 22 keeps listening; the firewall hides it from the internet.
 """
 import ipaddress
@@ -21,7 +21,7 @@ from .host import OPS, PROXY, command
 
 ROOT = OPS / 'panel/worker/secure'
 STATE = ROOT / 'state.json'
-RULES = Path('/etc/reeve-firewall.nft')
+RULES = Path('/etc/reeve/firewall.nft')
 UNIT = Path('/etc/systemd/system/reeve-firewall.service')
 WG_CONF = Path('/etc/wireguard/wg0.conf')
 WEB_DROPIN = Path('/etc/systemd/system/reeve-web.service.d/secure.conf')
@@ -90,8 +90,8 @@ DefaultDependencies=no
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/sbin/nft -f /etc/reeve-firewall.nft
-ExecReload=/usr/sbin/nft -f /etc/reeve-firewall.nft
+ExecStart=/usr/sbin/nft -f /etc/reeve/firewall.nft
+ExecReload=/usr/sbin/nft -f /etc/reeve/firewall.nft
 ExecStop=/usr/sbin/nft destroy table inet reeve
 
 [Install]
@@ -193,12 +193,18 @@ def enable(name='first'):
     state = {'stage': 'wireguard', 'subnet': subnet, 'port': port, 'endpoint': endpoint(), 'server_private': server_private, 'server_public': server_public,
              'clients': [{'name': name, 'address': client_address(subnet, 2), 'private': client_private, 'public': client_public, 'created': time.time()}],
              'token': secrets.token_urlsafe(24), 'pending_until': None, 'enabled_at': time.time(), 'events': []}
-    save(state)
-    apply_rules('wireguard', port)           # the panel port is hidden from outside before the panel listens beyond loopback
-    write_wireguard(state)
-    WEB_DROPIN.parent.mkdir(mode=0o755, parents=True, exist_ok=True); WEB_DROPIN.write_text(WEB_DROPIN_TEXT)
-    command(['systemctl', 'daemon-reload']); command(['systemctl', 'restart', 'reeve-web.service'], timeout=60)
-    note(state, 'WireGuard enabled')
+    try:
+        apply_rules('wireguard', port)       # the panel port is hidden from outside before the panel listens beyond loopback
+        write_wireguard(state)
+        WEB_DROPIN.parent.mkdir(mode=0o755, parents=True, exist_ok=True); WEB_DROPIN.write_text(WEB_DROPIN_TEXT)
+        command(['systemctl', 'daemon-reload']); command(['systemctl', 'restart', 'reeve-web.service'], timeout=60)
+    except Exception:
+        # Nothing half-done stays: the table, the tunnel and the panel binding go back to how they were.
+        subprocess.run(['nft', 'destroy', 'table', 'inet', 'reeve'], capture_output=True)
+        subprocess.run(['systemctl', 'disable', '--now', '--quiet', 'wg-quick@wg0.service'], capture_output=True)
+        if WEB_DROPIN.exists(): WEB_DROPIN.unlink(); subprocess.run(['systemctl', 'daemon-reload'], capture_output=True); subprocess.run(['systemctl', 'restart', 'reeve-web.service'], capture_output=True)
+        raise
+    save(state); note(state, 'WireGuard enabled')
     return status()
 
 
