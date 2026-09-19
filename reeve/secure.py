@@ -144,8 +144,14 @@ def write_private(path, text):
 def apply_rules(stage, port):
     write_private(RULES, rules(stage, port)); RULES.chmod(0o600)
     if not UNIT.exists():
-        UNIT.write_text(UNIT_TEXT); command(['systemctl', 'daemon-reload']); command(['systemctl', 'enable', '--quiet', 'reeve-firewall.service'])
+        UNIT.write_text(UNIT_TEXT); command(['systemctl', 'daemon-reload']); command(['systemctl', 'enable', '--now', '--quiet', 'reeve-firewall.service'], timeout=30)
     command(['nft', '-f', str(RULES)])
+
+
+def restart_web_soon():
+    """The panel is restarted a few seconds after the request that asked for it has been answered: the request
+    itself runs in that panel, and a restart inside it would cut the reply off."""
+    command(['systemd-run', '--quiet', '--on-active=3', '--unit=reeve-web-restart', 'systemctl', 'restart', 'reeve-web.service'], timeout=30)
 
 
 def keypair():
@@ -197,7 +203,7 @@ def enable(name='first'):
         apply_rules('wireguard', port)       # the panel port is hidden from outside before the panel listens beyond loopback
         write_wireguard(state)
         WEB_DROPIN.parent.mkdir(mode=0o755, parents=True, exist_ok=True); WEB_DROPIN.write_text(WEB_DROPIN_TEXT)
-        command(['systemctl', 'daemon-reload']); command(['systemctl', 'restart', 'reeve-web.service'], timeout=60)
+        command(['systemctl', 'daemon-reload']); restart_web_soon()
     except Exception:
         # Nothing half-done stays: the table, the tunnel and the panel binding go back to how they were.
         subprocess.run(['nft', 'destroy', 'table', 'inet', 'reeve'], capture_output=True)
@@ -274,7 +280,7 @@ def disable():
     subprocess.run(['nft', 'destroy', 'table', 'inet', 'reeve'], capture_output=True)
     subprocess.run(['systemctl', 'disable', '--now', '--quiet', 'reeve-firewall.service', 'wg-quick@wg0.service'], capture_output=True)
     if WEB_DROPIN.exists(): WEB_DROPIN.unlink()
-    command(['systemctl', 'daemon-reload']); command(['systemctl', 'restart', 'reeve-web.service'], timeout=60)
+    command(['systemctl', 'daemon-reload']); restart_web_soon()
     state['stage'] = 'off'; state['pending_until'] = None; save(state); note(state, 'secure mode disabled')
     return status()
 

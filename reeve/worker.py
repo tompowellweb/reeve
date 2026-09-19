@@ -17,7 +17,7 @@ SOCKET = "/run/reeve/worker.sock"
 
 def rpc(message, path=SOCKET):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
-        conn.settimeout(600 if message.get("op") in ("site-backup-import", "site-backup-export", "mail-setup") else 120 if message.get("op") in ("content-submit", "recovery-inspect", "site-restore", "backup-connect", "request-certificate") else 20)
+        conn.settimeout(600 if message.get("op") in ("site-backup-import", "site-backup-export", "mail-setup") else 120 if message.get("op") in ("content-submit", "recovery-inspect", "site-restore", "backup-connect", "request-certificate") or str(message.get("op", "")).startswith("secure-") else 20)
         conn.connect(path)
         conn.sendall(json.dumps(message).encode() + b"\n")
         with conn.makefile("rb") as stream:

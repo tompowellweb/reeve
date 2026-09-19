@@ -69,8 +69,8 @@ def test_the_three_steps_are_ordered_and_guarded(box):
     status = secure.enable()
     assert status['stage'] == 'wireguard' and status['clients'][0]['address'].endswith('.2') and status['endpoint'] == '203.0.113.5'
     assert secure.RULES.read_text().count('tcp dport 8088 drop') == 1 and secure.UNIT.exists() and secure.WEB_DROPIN.exists()
-    assert ['nft', '-f', str(secure.RULES)] in calls and any(c[:2] == ['systemctl', 'restart'] and 'reeve-web.service' in c for c in calls)
-    order = [i for i, c in enumerate(calls) if c[:2] == ['nft', '-f'] or 'reeve-web.service' in c]
+    assert ['nft', '-f', str(secure.RULES)] in calls and any(c[0] == 'systemd-run' and 'reeve-web.service' in c for c in calls)
+    order = [i for i, c in enumerate(calls) if c[:2] == ['nft', '-f'] or c[0] == 'systemd-run']
     assert calls[order[0]][:2] == ['nft', '-f']   # the panel port is hidden before the panel listens beyond loopback
     with pytest.raises(ValueError, match='already enabled'): secure.enable()
     subnet = status['subnet']; inside = secure.client_address(subnet, 2)
