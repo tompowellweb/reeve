@@ -34,6 +34,10 @@ Use engine-native database dumps and complete site backups that can restore on a
 server. Apply the same retention policy locally and remotely; retain final and imported
 backups. Changes to this path require an actual restore exercise on a test machine.
 
+A newer release must always restore a backup written by an older one, so a server can be
+rebuilt on the current release from its last backup and resume. Any change to the backup
+format is proved by restoring an old backup before it ships.
+
 ## Keep changes traceable
 
 Deploy committed, tested releases and check database schema compatibility before updates or
