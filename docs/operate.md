@@ -140,6 +140,20 @@ sudo reeve mail setup
 
 Public delivery also depends on the server's mail and DNS configuration.
 
+## Logs
+
+A site's **Logs** page shows the last lines its containers wrote (nginx, PHP, the database, or
+every service of a Compose package) and the edge's access log for its hostnames, with a time
+window and a text filter. A page that answers 500 has its reason in the PHP or web server
+output; PHP errors are never shown on the pages themselves.
+
+## Server settings
+
+**Settings** holds what the server does for every site: certificates (the edge's own
+authority or Let's Encrypt), outbound mail, the server profile, backup times and retention,
+and the PHP rebuild schedule. Each Save applies at once and says what it did. The same from
+the command line: `sudo reeve settings show` and `sudo reeve settings set <group> key=value`.
+
 ## Updates
 
 ![The PHP page: catalogue, rebuild policy and the release notice](images/php.png)

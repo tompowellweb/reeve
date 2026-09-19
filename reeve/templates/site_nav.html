@@ -1,4 +1,4 @@
 <nav class="site-nav" aria-label="Site navigation">
-{% for suffix,label in [('', 'Overview'),('/files','Files and tools'),('/schedules','Scheduled tasks'),('/toolbox','SSH toolbox'),('/backups','Backups')] %}
+{% for suffix,label in [('', 'Overview'),('/files','Files and tools'),('/schedules','Scheduled tasks'),('/toolbox','SSH toolbox'),('/backups','Backups'),('/logs','Logs')] %}
 <a href="/sites/{{site.name}}{{suffix}}" {% if request.url.path == '/sites/' ~ site.name ~ suffix %}aria-current="page"{% endif %}>{{label}}</a>
 {% endfor %}</nav>

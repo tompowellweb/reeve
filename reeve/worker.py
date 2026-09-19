@@ -33,7 +33,7 @@ def dispatch(message, ledger, host):
     fields = {"package-list": {"op"}, "package-deploy": {"op", "id", "data", "sha256"}, "package-status": {"op", "id"}, "compose-site": {"op", "site_id"}, "list": {"op"}, "defaults": {"op"}, "create": {"op", "id", "data"}, "retry": {"op", "id"},
               "domains": {"op", "id", "site_id", "domains"}, "retry-domains": {"op", "id"},
               "certificates": {"op", "site_id"}, "request-certificate": {"op", "site_id", "domain"},
-              "settings": {"op"}, "settings-save": {"op", "group", "values"},
+              "settings": {"op"}, "settings-save": {"op", "group", "values"}, "site-logs": {"op", "site_id", "source", "lines", "since", "match"},
               "recover-status": {"op"}, "recover-scan": {"op", "source", "folder"}, "recover-submit": {"op", "items"},
               "recover-retry": {"op", "id"}, "recover-settings": {"op"},
               "versions": {"op"}, "refresh-versions": {"op", "id"}, "php-rebuild": {"op", "id"}, "housekeeping": {"op"}, "sftp-key": {"op", "site_id"}, "backup-connect": {"op", "data"}, "backup-enabled": {"op", "enabled"}, "backup-disconnect": {"op"}, "backup-reveal": {"op"}, "backup-setup": {"op"}, "backup-server-key": {"op"}, "php-switch": {"op", "id", "site_id", "branch"},
@@ -298,6 +298,11 @@ def dispatch(message, ledger, host):
     if op == "settings":
         from .settings import read
         return read()
+    if op == "site-logs":
+        from .site_logs import read as read_logs, sources
+        row = ledger.get(message["site_id"])
+        source = str(message.get("source") or "") or sources(ledger, row)[0][0]
+        return read_logs(ledger, row, source, str(message.get("lines") or "100"), str(message.get("since") or ""), str(message.get("match") or ""))
     if op == "settings-save":
         from .settings import save
         return save(host, ledger, message["group"], message["values"] if isinstance(message["values"], dict) else {})

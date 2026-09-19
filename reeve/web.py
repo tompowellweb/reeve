@@ -510,6 +510,8 @@ def create_app(auth_path="/srv/ops/panel/web/auth.sqlite3", call=rpc, status_pat
 
     from .content_web import routes
     routes(app, session, mutation, render, call, Path(auth_path).parent / "uploads")
+    from .logs_web import routes as logs_routes
+    logs_routes(app, session, render, call)
     from .settings_web import routes as settings_routes
     settings_routes(app, session, mutation, render, call)
     from .recover_web import routes as recover_routes
