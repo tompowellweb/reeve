@@ -427,7 +427,7 @@ wheels = [
 
 [[package]]
 name = "reeve-panel"
-version = "1.2.1"
+version = "1.2.2"
 source = { virtual = "." }
 dependencies = [
     { name = "argon2-cffi" },

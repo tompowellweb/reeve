@@ -16,7 +16,7 @@ SOCKET = "/run/reeve/worker.sock"
 
 def rpc(message, path=SOCKET):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
-        conn.settimeout(600 if message.get("op") in ("site-backup-import", "site-backup-export", "mail-setup") else 120 if message.get("op") in ("content-submit", "recovery-inspect", "site-restore", "backup-connect") else 20)
+        conn.settimeout(600 if message.get("op") in ("site-backup-import", "site-backup-export", "mail-setup") else 120 if message.get("op") in ("content-submit", "recovery-inspect", "site-restore", "backup-connect", "request-certificate") else 20)
         conn.connect(path)
         conn.sendall(json.dumps(message).encode() + b"\n")
         with conn.makefile("rb") as stream:
@@ -32,6 +32,7 @@ def dispatch(message, ledger, host):
     op = message.get("op")
     fields = {"package-list": {"op"}, "package-deploy": {"op", "id", "data", "sha256"}, "package-status": {"op", "id"}, "compose-site": {"op", "site_id"}, "list": {"op"}, "defaults": {"op"}, "create": {"op", "id", "data"}, "retry": {"op", "id"},
               "domains": {"op", "id", "site_id", "domains"}, "retry-domains": {"op", "id"},
+              "certificates": {"op", "site_id"}, "request-certificate": {"op", "site_id", "domain"},
               "versions": {"op"}, "refresh-versions": {"op", "id"}, "php-rebuild": {"op", "id"}, "housekeeping": {"op"}, "sftp-key": {"op", "site_id"}, "backup-connect": {"op", "data"}, "backup-enabled": {"op", "enabled"}, "backup-disconnect": {"op"}, "backup-reveal": {"op"}, "backup-setup": {"op"}, "backup-server-key": {"op"}, "php-switch": {"op", "id", "site_id", "branch"},
               "php-rollback": {"op", "id", "site_id", "previous"}, "retry-runtime": {"op", "id"},
               "database-versions": {"op"}, "refresh-databases": {"op", "id"},
@@ -291,6 +292,12 @@ def dispatch(message, ledger, host):
         return ledger.submit_domains(message["id"], message["site_id"], message["domains"])
     if op == "retry-domains":
         return ledger.retry_domains(message["id"])
+    if op == "certificates":
+        from .certificates import edge_issuance
+        return edge_issuance(ledger.domains(ledger.get(message["site_id"])))
+    if op == "request-certificate":
+        from .certificates import request_public
+        return request_public(message["domain"], ledger.domains(ledger.get(message["site_id"])))
     from .database_site import public as database_info
     def describe(row):
         database = database_info(row, host)

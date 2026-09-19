@@ -235,6 +235,9 @@ def create_app(auth_path="/srv/ops/panel/web/auth.sqlite3", call=rpc, status_pat
         except (ValueError, OSError): extra['traffic'] = None
         from .certificates import status as certificate_status
         extra['certificates'] = {name: certificate_status(name) for name in (row.get('domains') or [row['domain']])}
+        try: issuance = call({'op': 'certificates', 'site_id': row['id']})
+        except (ValueError, OSError): issuance = {}
+        for name, entry in extra['certificates'].items(): entry['issuance'] = issuance.get(name)
         try:
             extra['deletion'] = (call({'op': 'site-deletes', 'site_id': row['id']}) or [None])[0]
             extra['restore_job'] = (call({'op': 'site-restores', 'site_id': row['id']}) or [None])[0]
@@ -461,6 +464,18 @@ def create_app(auth_path="/srv/ops/panel/web/auth.sqlite3", call=rpc, status_pat
         except (ValueError, OSError) as exc: raise HTTPException(400, str(exc))
         row = next((x for x in call({'op': 'list'}) if x['id'] == job['site_id']), None)
         return RedirectResponse('/sites/' + row['name'] + '#deletion' if row else '/', 303)
+
+    @app.post("/sites/{name}/certificate")
+    async def request_certificate(request: Request, name: str):
+        form = await mutation(request)
+        row = next((x for x in call({"op": "list"}) if x["name"] == name), None)
+        if not row:
+            raise HTTPException(404, "Site not found")
+        try:
+            call({"op": "request-certificate", "site_id": row["id"], "domain": str(form.get("domain", ""))})
+        except (ValueError, OSError) as exc:
+            return render_site(request, row, error=str(exc))
+        return RedirectResponse("/sites/" + name + "#domain-operation", 303)
 
     @app.post("/retry-domains/{ident}")
     async def retry_domains(request: Request, ident: str):
