@@ -66,7 +66,7 @@ def test_apply_fetches_the_tag_and_runs_the_installer(box, monkeypatch, tmp_path
     monkeypatch.setattr(up.subprocess, 'run', lambda args, cwd=None: ran.append((args, cwd)) or type('R', (), {'returncode': 0})())
     logged = []
     assert up.apply(log=logged.append) == {'installed': '1.10.0', 'from': up.DEFAULT_SOURCE}
-    assert calls[0][:2] == ['git', 'clone'] and calls[1][:3] == ['git', '-C', str(tmp_path / 'src')] and calls[-1][-1] == 'v1.10.0'
+    assert calls[0][:2] == ['git', 'clone'] and calls[1][:3] == ['git', '-C', str(tmp_path / 'src')] and '--force' in calls[1] and calls[-1][-1] == 'v1.10.0'
     assert ran[0][0][1] == str(tmp_path / 'src/install.py') and ran[0][1] == str(tmp_path / 'src')
     assert up.apply('1.2.0', log=logged.append)['installed'] == '1.2.0' and calls[-1][-1] == 'v1.2.0'
     with pytest.raises(ValueError): up.apply('nonsense')

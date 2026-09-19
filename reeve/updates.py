@@ -110,7 +110,7 @@ def apply(version=None, log=None):
     if not SRC.exists():
         SRC.parent.mkdir(parents=True, exist_ok=True)
         command(['git', 'clone', '--quiet', url, str(SRC)], timeout=300)
-    command(['git', '-C', str(SRC), 'fetch', '--quiet', '--tags', url], timeout=300)
+    command(['git', '-C', str(SRC), 'fetch', '--quiet', '--tags', '--force', url], timeout=300)   # the published tags are the authority
     target = version or newest(command(['git', '-C', str(SRC), 'ls-remote', '--tags', url], timeout=60))
     if not target or not parse(target): raise ValueError('No release to update to')
     tag = 'v' + str(target).lstrip('v')

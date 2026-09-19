@@ -42,6 +42,7 @@ See [Design](design.md) and [Engineering decisions](decisions.md) for the constr
 1. Run relevant tests. Exercise host changes on a test server; backup or restore changes
    require a restore exercise.
 2. Commit the tested changes. For a release, tag the commit `vX.Y.Z` and push the commit and tag.
+   Never move a published tag; a mistake gets the next number.
 3. Install the selected commit on the test server with `sudo python3 install.py`, or install
    the published version with `sudo reeve update --to <version>`.
 4. Check service health and the behaviour changed by the release.
