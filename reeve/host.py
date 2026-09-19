@@ -601,8 +601,9 @@ EDGE_IPV6 = "fd5e:1e2e:2::/64"
 
 
 def engine_ipv6():
-    """Whether Docker publishes on IPv6 here: the daemon setting the installer writes, effective after its restart."""
-    try: return bool(json.loads(command(["docker", "info", "--format", "{{json .}}"], timeout=20)).get("IPv6", False))
+    """Whether Docker publishes on IPv6 here: the daemon setting the installer writes, effective after its restart,
+    read from the default bridge, which takes IPv6 exactly when the daemon has it."""
+    try: return json.loads(command(["docker", "network", "inspect", "bridge"], timeout=20))[0].get("EnableIPv6", False) is True
     except Exception: return False
 
 
