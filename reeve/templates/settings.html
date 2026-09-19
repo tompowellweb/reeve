@@ -2,6 +2,33 @@
 <a class="breadcrumb" href="/">← Sites</a><div class="heading"><div><h1>Server settings</h1><p class="muted">What this server does for every site. Each Save applies at once and says what it did.</p></div></div>
 {% if error %}<p class="error">{{error}}</p>{% endif %}
 {% if saved %}<p class="notice">Saved {{titles.get(saved, saved)}}.{% if note %} {{note}}{% endif %}</p>{% endif %}
+{% macro when(value) %}<time data-timestamp="{{value}}">{{value|timestamp}}</time>{% endmacro %}
+{% if secure %}
+<section class="card" id="secure"><h2>Secure access</h2>
+{% if secure.stage == 'off' %}<p>Administration over WireGuard, and a firewall that leaves only the sites (80, 443), customer SFTP (2222) and the tunnel reachable from the internet, on IPv4 and IPv6. Three steps: enable the tunnel, connect to it, lock down from over it. Until you lock down nothing is blocked except the panel port from outside.</p>
+<form method="post" action="/settings/secure/enable"><input type="hidden" name="csrf" value="{{session.csrf}}"><button>Enable WireGuard</button></form>
+{% else %}
+<p><strong>{{ {'wireguard': 'Tunnel up, not locked down', 'locked-pending': 'Locked down, awaiting confirmation', 'locked': 'Locked down'}[secure.stage] }}</strong> · network <code>{{secure.subnet}}</code> · UDP port <code>{{secure.port}}</code> · endpoint <code>{{secure.endpoint}}</code>{% if secure.from_tunnel %} · you are connected over the tunnel{% else %} · you are not connected over the tunnel{% endif %}</p>
+{% if secure_extra.client %}<div class="notice"><p><strong>Client configuration for {{secure_extra.client.name}}</strong>, shown now and kept on the server. Import it into WireGuard on your computer or phone, then connect.</p><pre class="log-lines">{{secure_extra.client.text}}</pre>{% if secure_extra.client.svg %}<div class="qr">{{secure_extra.client.svg|safe}}</div>{% endif %}<p><a href="/settings/secure/client/{{secure_extra.client.name}}.conf">Download {{secure_extra.client.name}}.conf</a></p></div>{% endif %}
+{% if secure_extra.token %}<div class="notice"><p><strong>Break-glass unlock token</strong>, single use. If the tunnel is lost, request this address from the machine you want to admit and port 22 opens to it for thirty minutes:</p><pre class="log-lines">{{secure_extra.token.url}}</pre></div>{% endif %}
+<dl class="compact-dl"><dt>Clients</dt><dd>{% for c in secure.clients %}<code>{{c.name}}</code> {{c.address}}{% if c.handshake_seconds is not none %} · handshake {{c.handshake_seconds|round|int}} s ago{% else %} · never connected{% endif %} · <a href="/settings/secure/client/{{c.name}}.conf">config</a><br>{% endfor %}</dd>
+<dt>From the internet</dt><dd>{% if secure.stage == 'wireguard' %}everything as before, except the panel port{% else %}TCP {{secure.public_tcp|join(', ')}} and UDP {{secure.port}} only{% endif %}</dd>
+<dt>Over the tunnel</dt><dd>everything: SSH on 22, the panel at <code>http://{{secure.subnet.rsplit('.', 1)[0]}}.1:{{secure.panel_port}}</code></dd>
+{% if secure.unlock %}<dt>Break-glass</dt><dd class="error">port 22 is open to {{secure.unlock.address}} until {{when(secure.unlock.until)}}</dd>{% endif %}</dl>
+<div class="row-actions">
+{% if secure.stage == 'wireguard' %}<form method="post" action="/settings/secure/lockdown"><input type="hidden" name="csrf" value="{{session.csrf}}"><button {% if not (secure.from_tunnel and secure.live_handshake) %}disabled title="Connect over the tunnel first"{% endif %}>Lock down</button></form>{% endif %}
+{% if secure.stage == 'locked-pending' %}<form method="post" action="/settings/secure/confirm"><input type="hidden" name="csrf" value="{{session.csrf}}"><button {% if not secure.from_tunnel %}disabled{% endif %}>Confirm lockdown</button></form><p class="compact-note">Reverts by itself at {{when(secure.pending_until)}} unless confirmed from over the tunnel.</p>{% endif %}
+{% if secure.stage in ('locked', 'locked-pending') %}<form method="post" action="/settings/secure/revert"><input type="hidden" name="csrf" value="{{session.csrf}}"><button class="secondary">Open the firewall again</button></form>{% endif %}
+<form method="post" action="/settings/secure/add-client" class="row-actions"><input type="hidden" name="csrf" value="{{session.csrf}}"><input name="name" placeholder="laptop" pattern="[a-z0-9][a-z0-9-]{0,30}" required><button class="secondary">Add client</button></form>
+<form method="post" action="/settings/secure/token"><input type="hidden" name="csrf" value="{{session.csrf}}"><button class="secondary">Reveal unlock token</button></form>
+{% if secure.unlock %}<form method="post" action="/settings/secure/close-unlock"><input type="hidden" name="csrf" value="{{session.csrf}}"><button class="secondary">Close port 22</button></form>{% endif %}
+<form method="post" action="/settings/secure/disable"><input type="hidden" name="csrf" value="{{session.csrf}}"><label>Type <code>disable</code><input name="confirm" autocomplete="off"></label><button class="secondary">Turn secure mode off</button></form>
+</div>
+<p class="compact-note">Lock down is offered once this page is opened over the tunnel and a client has a live handshake. A provider firewall, if any, must allow the UDP port. sshd is unchanged; the firewall only hides 22 from the internet.</p>
+{% if secure.events %}<details class="compact-details"><summary>Recent events</summary><ul>{% for e in secure.events|reverse %}<li>{{when(e.at)}} {{e.text}}</li>{% endfor %}</ul></details>{% endif %}
+{% endif %}
+</section>
+{% endif %}
 {% if settings %}
 <section class="card" id="certificates"><h2>Certificates</h2>
 <form method="post" action="/settings/certificates"><input type="hidden" name="csrf" value="{{session.csrf}}">

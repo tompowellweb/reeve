@@ -9,7 +9,8 @@ in time you choose, as new sites or into live ones.
 - The backup destination address and its repository password.
 - For SFTP, the credentials or a way to authorise a new server's key, and the host key fingerprint.
 
-Nothing else. The repository holds a **server record** beside the site backups: the server's
+Nothing else. A replacement server makes its own WireGuard tunnel; the old client
+configurations do not carry over. The repository holds a **server record** beside the site backups: the server's
 settings, its release, and every site with its hostnames and latest complete backup. It is
 written whenever something changes and copied with the backups.
 

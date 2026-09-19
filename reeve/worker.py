@@ -5,6 +5,7 @@ import pwd
 import socket
 import socketserver
 import struct
+import sys
 import threading
 import time
 import uuid
@@ -34,6 +35,9 @@ def dispatch(message, ledger, host):
               "domains": {"op", "id", "site_id", "domains"}, "retry-domains": {"op", "id"},
               "certificates": {"op", "site_id"}, "request-certificate": {"op", "site_id", "domain"},
               "settings": {"op"}, "settings-save": {"op", "group", "values"}, "site-logs": {"op", "site_id", "source", "lines", "since", "match"},
+              "secure-status": {"op", "requester"}, "secure-enable": {"op"}, "secure-lockdown": {"op", "requester"}, "secure-confirm": {"op", "requester"},
+              "secure-revert": {"op"}, "secure-disable": {"op"}, "secure-add-client": {"op", "name"}, "secure-client": {"op", "name"},
+              "secure-token": {"op"}, "secure-close-unlock": {"op"},
               "recover-status": {"op"}, "recover-scan": {"op", "source", "folder"}, "recover-submit": {"op", "items"},
               "recover-retry": {"op", "id"}, "recover-settings": {"op"},
               "versions": {"op"}, "refresh-versions": {"op", "id"}, "php-rebuild": {"op", "id"}, "housekeeping": {"op"}, "sftp-key": {"op", "site_id"}, "backup-connect": {"op", "data"}, "backup-enabled": {"op", "enabled"}, "backup-disconnect": {"op"}, "backup-reveal": {"op"}, "backup-setup": {"op"}, "backup-server-key": {"op"}, "php-switch": {"op", "id", "site_id", "branch"},
@@ -298,6 +302,14 @@ def dispatch(message, ledger, host):
     if op == "settings":
         from .settings import read
         return read()
+    if op.startswith("secure-"):
+        from . import secure
+        requester = str(message.get("requester") or "")
+        return {"secure-status": lambda: secure.status(requester), "secure-enable": secure.enable, "secure-lockdown": lambda: secure.lockdown(requester),
+                "secure-confirm": lambda: secure.confirm(requester), "secure-revert": secure.revert, "secure-disable": secure.disable,
+                "secure-add-client": lambda: secure.add_client(str(message.get("name") or "")), "secure-token": secure.token,
+                "secure-close-unlock": secure.close_unlock,
+                "secure-client": lambda: {**secure.client_config(str(message.get("name") or "")), "svg": secure.client_qr(str(message.get("name") or ""))}}[op]()
     if op == "site-logs":
         from .site_logs import read as read_logs, sources
         row = ledger.get(message["site_id"])
@@ -442,6 +454,7 @@ def run():
         next_catalogue_check = 0
         next_schedule_check = 0
         next_backup_check = 0
+        last_secure_tick = 0.0
         while True:
             if time.monotonic() >= next_backup_check:
                 from .backup_jobs import tick as backup_tick
@@ -623,6 +636,13 @@ def run():
                 perform_restore(ledger, host, job)
             from .restoration import tick as recovery_tick
             recovery_tick(ledger, host)
+            if time.time() - last_secure_tick > 20:
+                last_secure_tick = time.time()
+                try:
+                    from .secure import tick as secure_tick
+                    secure_tick()
+                except Exception as exc:
+                    print('secure mode pass failed: ' + str(exc)[:200], file=sys.stderr, flush=True)
             time.sleep(0.5)
 
     allowed_uid = pwd.getpwnam("hosting-web").pw_uid

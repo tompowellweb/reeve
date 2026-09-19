@@ -154,6 +154,25 @@ authority or Let's Encrypt), outbound mail, the server profile, backup times and
 and the PHP rebuild schedule. Each Save applies at once and says what it did. The same from
 the command line: `sudo reeve settings show` and `sudo reeve settings set <group> key=value`.
 
+## Secure access
+
+**Settings → Secure access** puts administration behind WireGuard and closes the server to the
+internet except for the sites (80, 443), customer SFTP (2222) and the tunnel's UDP port, on
+IPv4 and IPv6. Three steps, in order:
+
+1. **Enable WireGuard.** The server makes its keys and a first client configuration, shown once
+   with a QR code and kept on the server. Import it into WireGuard on your computer or phone and
+   connect. Nothing is blocked yet except the panel port from outside; the panel now also answers
+   on the tunnel address, so the SSH forward is no longer needed.
+2. **Lock down.** Offered once the page is opened over the tunnel and a client has a live
+   handshake, so the path you are about to depend on is proven first.
+3. **Confirm** within fifteen minutes, from over the tunnel, or the lockdown reverts by itself.
+
+sshd is unchanged: 22 keeps listening and works over the tunnel. A provider firewall, if any,
+must allow the UDP port. **Reveal unlock token** shows a single-use break-glass address: if the
+tunnel is lost, request it from the machine you want to admit and port 22 opens to that address
+for thirty minutes; the page shows it with a button to close it, and issues a new token.
+
 ## Updates
 
 ![The PHP page: catalogue, rebuild policy and the release notice](images/php.png)

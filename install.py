@@ -37,9 +37,9 @@ from pathlib import Path
 
 BASE = Path("/opt/reeve")
 RECORD = Path("/srv/ops/panel/release.json")
-PACKAGES = ["ca-certificates", "curl", "gnupg", "git", "xfsprogs", "python3-venv", "rsync", "restic"]
+PACKAGES = ["ca-certificates", "curl", "gnupg", "git", "xfsprogs", "python3-venv", "rsync", "restic", "nftables", "wireguard-tools", "qrencode"]
 DOCKER_PACKAGES = ["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"]
-DAEMON = {"data-root": "/srv/docker", "storage-driver": "overlay2", "storage-opts": ["overlay2.size=1G"],
+DAEMON = {"data-root": "/srv/docker", "storage-driver": "overlay2", "storage-opts": ["overlay2.size=1G"], "ipv6": True, "fixed-cidr-v6": "fd5e:1e2e:1::/64", "ip6tables": True,
           "default-address-pools": [{"base": "10.240.0.0/12", "size": 24}], "features": {"containerd-snapshotter": False},
           "log-driver": "journald", "log-opts": {"labels": "com.docker.compose.project,com.docker.compose.service"},
           "userland-proxy": False}
@@ -550,6 +550,8 @@ def main():
     data_filesystem(args.data_device, args.format_data, args.data_image, args.data_percent)
     docker_engine()
     daemon_setting("userland-proxy", False)
+    # Sites over IPv6: the engine publishes on both families once it restarts with these; a private ULA range for containers.
+    daemon_setting("ipv6", True); daemon_setting("fixed-cidr-v6", "fd5e:1e2e:1::/64"); daemon_setting("ip6tables", True)
     commit, version, modified, archive, changed = tree(source, args.commit, args.allow_modified)
     source_url = (subprocess.run(["git", "-c", f"safe.directory={source}", "-C", str(source), "remote", "get-url", "origin"], capture_output=True, text=True).stdout.strip() or None) if (source / ".git").exists() else None
     release = install_release(source, commit, version, modified, archive, changed)

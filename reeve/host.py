@@ -588,7 +588,7 @@ def render_routes(routes, tls=None):
     Caddy tries the public issuer again at every renewal."""
     tls = tls or tls_settings()
     contact = f" email {tls['email']}\n" if tls['mode'] == 'public' and tls['email'] else ''
-    text = '{\n skip_install_trust\n' + contact + ' servers {\n  protocols h1 h2\n }\n}\nhttp:// {\n respond "server is up" 200\n}\n'
+    text = ('{\n skip_install_trust\n' + contact + ' servers {\n  protocols h1 h2\n }\n}\nhttp:// {\n log {\n  output file /data/logs/_unmatched.log {\n   roll_size 5MiB\n   roll_keep 2\n   roll_keep_for 48h\n  }\n  format json\n }\n respond "server is up" 200\n}\n')
     per_site = ' tls internal\n' if tls['mode'] == 'internal' else ' tls {\n  issuer acme\n  issuer internal\n }\n'
     for domain, item in sorted(routes.items()):
         # One rolling JSON access log per hostname under the edge's own data: 20 MiB × 5 files, 30 days,
@@ -597,8 +597,27 @@ def render_routes(routes, tls=None):
     return text
 
 
+EDGE_IPV6 = "fd5e:1e2e:2::/64"
+
+
+def engine_ipv6():
+    """Whether Docker publishes on IPv6 here: the daemon setting the installer writes, effective after its restart."""
+    try: return bool(json.loads(command(["docker", "info", "--format", "{{json .}}"], timeout=20)).get("IPv6", False))
+    except Exception: return False
+
+
 def write_edge_compose(config, routes):
-    networks = {"edge": {"name": "hosting-edge-egress"}}
+    # The edge's own network takes IPv6 when the engine has it and the network is new or already so; an existing
+    # IPv4-only network is left alone (Compose refuses to change a network under a running project).
+    edge = {"name": "hosting-edge-egress"}
+    try:
+        existing = json.loads(command(["docker", "network", "inspect", "hosting-edge-egress"], timeout=20))
+        has_v6 = bool(existing and existing[0].get("EnableIPv6"))
+    except Exception:
+        existing, has_v6 = None, False
+    if has_v6 or (not existing and engine_ipv6()):
+        edge.update({"enable_ipv6": True, "ipam": {"config": [{"subnet": EDGE_IPV6}]}})
+    networks = {"edge": edge}
     for item in routes.values():
         networks[item["network"]] = {"external": True, "name": item["network"]}
     compose = {"name": "hosting-edge", "services": {"caddy": {

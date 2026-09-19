@@ -50,6 +50,7 @@ It does not need the old worker's database. See [Recover](recover.md).
 The worker gathers resource use from the kernel, Docker and quotas, and aggregates traffic
 from proxy logs. It writes a summary the web process can read while jobs are running.
 
-Server profiles provide resource defaults that sites can override. DNS management, public
-TLS policy, firewall management, inbound mail and multi-server orchestration are outside the
-panel's scope.
+Server profiles provide resource defaults that sites can override. Secure access is one nftables
+table (input and forward chains, both families) and a WireGuard interface the worker manages;
+the lockdown is taken only from over the tunnel and reverts unless confirmed. DNS management,
+inbound mail and multi-server orchestration are outside the panel's scope.

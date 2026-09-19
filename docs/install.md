@@ -35,13 +35,13 @@ and run `systemctl restart ssh`. Use the new account for everything below.
 
 ## Install Reeve
 
-The example below installs release `v1.3.2`.
+The example below installs release `v1.4.0`.
 
 ```sh
 sudo apt-get install -y git
 git clone https://github.com/tompowellweb/reeve.git
 cd reeve
-git checkout v1.3.2
+git checkout v1.4.0
 sudo python3 install.py
 ```
 
@@ -111,5 +111,7 @@ Sites get certificates from the edge's own certificate authority until you switc
 ones on **Settings**, once the sites' names point at this server and ports 80 and 443 are
 reachable from the internet. A name whose DNS does not point here yet is served with the
 edge's own certificate until it does; each site's **Domains** section says which kind every
-name has. Firewall rules and outgoing mail delivery still need arranging on a public server.
+name has. On a public server, turn on **Secure access** on Settings once you can reach the
+panel: it puts administration behind WireGuard and closes every other port. Outgoing mail
+delivery still needs arranging.
 
