@@ -410,6 +410,26 @@ def create_app(auth_path="/srv/ops/panel/web/auth.sqlite3", call=rpc, status_pat
         except (ValueError, OSError) as exc: return destination_page(request, error=str(exc))
         return RedirectResponse('/backups', 303)
 
+    @app.get('/backups/card')
+    def backup_card(request: Request):
+        session(request)
+        try: result = call({'op': 'backup-card'})
+        except (ValueError, OSError) as exc: return destination_page(request, error=str(exc))
+        from fastapi.responses import Response
+        name = 'reeve-recovery-card-' + re.sub(r'[^A-Za-z0-9.-]', '-', str(result.get('hostname') or 'server')) + '.json'
+        return Response(json.dumps(result, indent=2), media_type='application/json', headers={'Content-Disposition': f'attachment; filename="{name}"'})
+
+    @app.post('/backups/connect-card')
+    async def backup_connect_card(request: Request):
+        form = await mutation(request)
+        upload = form.get('card')
+        try:
+            text = (await upload.read()).decode() if hasattr(upload, 'read') else str(upload or '')
+            if len(text) > 65536: raise ValueError('That is not a recovery card')
+            result = call({'op': 'backup-connect-card', 'card': text})
+        except (ValueError, OSError, UnicodeDecodeError) as exc: return destination_page(request, error=str(exc))
+        return destination_page(request, connected=result)
+
     @app.post('/backups/reveal')
     async def backup_reveal(request: Request):
         await mutation(request)

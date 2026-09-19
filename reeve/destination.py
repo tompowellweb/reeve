@@ -208,3 +208,76 @@ def overview():
         m = re.fullmatch(r's3:https://s3\.([a-z0-9-]+)\.amazonaws\.com/([^/]+)(?:/(.*))?', config['repository'])
         info.update(region=m.group(1), bucket=m.group(2), prefix=m.group(3) or '')
     return info
+
+
+# ---- the recovery card: the way into the repository, kept outside the server
+
+def card():
+    """Everything a fresh server needs to open this destination: the address, the pinned host keys, the
+    credentials (this server's uploader key, so the destination need not authorise a new one) and the repository
+    password. Keep it in a password manager: it is the whole of the backups."""
+    import socket, time
+    if not CONFIG.exists(): raise ValueError('No destination is connected')
+    trusted(CONFIG); config = json.loads(CONFIG.read_text())
+    out = {'kind': 'reeve-recovery-card', 'schema': 1, 'made_at': time.time(), 'hostname': socket.gethostname(),
+           'type': config.get('type'), 'repository': config.get('repository'), 'repository_id': config.get('repository_id'),
+           'repository_password': (SECRETS / 'restic-password').read_text().strip()}
+    if config.get('type') == 'sftp':
+        out['known_hosts'] = Path(config['known_hosts_file']).read_text()
+        if config.get('ssh_password_file'): out['ssh_password'] = Path(config['ssh_password_file']).read_text().rstrip('\n')
+        else:
+            out['ssh_private_key'] = Path(config['ssh_key_file']).read_text()
+            out['ssh_public_key'] = Path(config['ssh_key_file'] + '.pub').read_text().strip()
+    elif config.get('type') == 's3':
+        out['aws'] = json.loads(Path(config['aws_credentials_file']).read_text())
+    return out
+
+
+def connect_card(text):
+    """Connect from a recovery card: the pinned host keys and credentials as recorded, the repository opened with the
+    card's password and required to be the very repository the card names. Uploads start paused, since the server
+    the card came from may still be writing."""
+    try: data = json.loads(text)
+    except ValueError: raise ValueError('Not a recovery card') from None
+    if not isinstance(data, dict) or data.get('kind') != 'reeve-recovery-card' or data.get('schema') != 1: raise ValueError('Not a recovery card')
+    for key in ('type', 'repository', 'repository_id', 'repository_password'):
+        if not isinstance(data.get(key), str) or not data[key]: raise ValueError('The card is missing its ' + key.replace('_', ' '))
+    if data['type'] not in ('sftp', 's3'): raise ValueError('Unknown destination type on the card')
+    SECRETS.mkdir(mode=0o700, exist_ok=True); trusted(SECRETS, directory=True)
+    candidate = SECRETS / 'candidate'
+    if candidate.exists(): trusted(candidate, directory=True); shutil.rmtree(candidate)
+    candidate.mkdir(mode=0o700)
+    try:
+        private_file(candidate / 'restic-password', data['repository_password'] + '\n')
+        config = {'enabled': False, 'timeout_seconds': 600, 'password_file': str(SECRETS / 'restic-password'), 'type': data['type'],
+                  'repository': data['repository'], 'repository_id': data['repository_id']}
+        if data['type'] == 'sftp':
+            if not data.get('known_hosts'): raise ValueError('The card has no host keys')
+            private_file(candidate / 'known_hosts', data['known_hosts']); config['known_hosts_file'] = str(SECRETS / 'known_hosts')
+            if data.get('ssh_password'):
+                private_file(candidate / 'ssh-password', data['ssh_password'] + '\n')
+                atomic(candidate / 'ssh-askpass', '#!/bin/sh\nexec cat "$(dirname "$0")/ssh-password"\n', 0o700)
+                config.update(ssh_password_file=str(SECRETS / 'ssh-password'), ssh_askpass_file=str(SECRETS / 'ssh-askpass'))
+            elif data.get('ssh_private_key'):
+                private_file(candidate / 'id_ed25519', data['ssh_private_key'])
+                if data.get('ssh_public_key'): atomic(candidate / 'id_ed25519.pub', data['ssh_public_key'] + '\n', 0o644)
+                config['ssh_key_file'] = str(SECRETS / 'id_ed25519')
+            else: raise ValueError('The card has no SFTP credentials')
+        else:
+            if not isinstance(data.get('aws'), dict): raise ValueError('The card has no S3 credentials')
+            private_file(candidate / 'aws.json', json.dumps(data['aws'])); config['aws_credentials_file'] = str(SECRETS / 'aws.json')
+        trial = dict(config, password_file=str(candidate / 'restic-password'))
+        for key, name in (('known_hosts_file', 'known_hosts'), ('ssh_password_file', 'ssh-password'), ('ssh_askpass_file', 'ssh-askpass'), ('aws_credentials_file', 'aws.json'), ('ssh_key_file', 'id_ed25519')):
+            if key in trial: trial[key] = str(candidate / name)
+        atomic(candidate / 'remote-backup.json', json.dumps(trial, indent=2), 0o600)
+        checked = settings_from(candidate / 'remote-backup.json', require_id=False)
+        try: ident = repository_id(checked)
+        except RemoteFailed: raise ValueError('The repository could not be opened with the card; check the destination is reachable from here') from None
+        if ident != data['repository_id']: raise ValueError('That is a different repository from the one the card names')
+        for name in ('restic-password', 'known_hosts', 'ssh-password', 'ssh-askpass', 'aws.json', 'id_ed25519', 'id_ed25519.pub'):
+            if (candidate / name).exists(): os.replace(candidate / name, SECRETS / name)
+        atomic(CONFIG, json.dumps(config, indent=2), 0o600)
+    finally:
+        if candidate.exists(): shutil.rmtree(candidate)
+    return {'type': config['type'], 'repository': config['repository'], 'repository_id': config['repository_id'], 'enabled': False,
+            'fingerprints': fingerprints(SECRETS / 'known_hosts') if config['type'] == 'sftp' else []}

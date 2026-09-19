@@ -17,7 +17,7 @@ SOCKET = "/run/reeve/worker.sock"
 
 def rpc(message, path=SOCKET):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
-        conn.settimeout(600 if message.get("op") in ("site-backup-import", "site-backup-export", "mail-setup") else 120 if message.get("op") in ("content-submit", "recovery-inspect", "site-restore", "backup-connect", "request-certificate") or str(message.get("op", "")).startswith("secure-") else 20)
+        conn.settimeout(600 if message.get("op") in ("site-backup-import", "site-backup-export", "mail-setup") else 120 if message.get("op") in ("content-submit", "recovery-inspect", "site-restore", "backup-connect", "backup-connect-card", "request-certificate") or str(message.get("op", "")).startswith("secure-") else 20)
         conn.connect(path)
         conn.sendall(json.dumps(message).encode() + b"\n")
         with conn.makefile("rb") as stream:
@@ -35,6 +35,7 @@ def dispatch(message, ledger, host):
               "domains": {"op", "id", "site_id", "domains"}, "retry-domains": {"op", "id"},
               "certificates": {"op", "site_id"}, "request-certificate": {"op", "site_id", "domain"},
               "settings": {"op"}, "settings-save": {"op", "group", "values"}, "site-logs": {"op", "site_id", "source", "lines", "since", "match"},
+              "backup-card": {"op"}, "backup-connect-card": {"op", "card"},
               "secure-status": {"op", "requester"}, "secure-enable": {"op"}, "secure-lockdown": {"op", "requester"}, "secure-confirm": {"op", "requester"},
               "secure-revert": {"op"}, "secure-disable": {"op"}, "secure-add-client": {"op", "name"}, "secure-client": {"op", "name"},
               "secure-token": {"op"}, "secure-close-unlock": {"op"},
@@ -266,6 +267,12 @@ def dispatch(message, ledger, host):
     if op == 'sftp-key':
         from .sftp import export_key
         return export_key(ledger.get(message['site_id']))
+    if op == 'backup-card':
+        from .destination import card
+        return card()
+    if op == 'backup-connect-card':
+        from .destination import connect_card
+        return connect_card(str(message['card']))
     if op == 'backup-connect':
         from .destination import connect
         return connect(message['data'])

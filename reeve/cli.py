@@ -54,6 +54,8 @@ def add_others(sub):
     backup = sub.add_parser('backup', help='the off-machine destination').add_subparsers(dest='verb', required=True)
     backup.add_parser('status', help='destination, pending copies, last copy')
     backup.add_parser('copy', help='copy waiting backups now')
+    backup.add_parser('card', help='print the recovery card (the whole way into the repository; keep it private)')
+    backup.add_parser('connect-card', help='connect from a recovery card file').add_argument('file')
     schedule = backup.add_parser('schedule', help="a site's database dump interval"); schedule.add_argument('name'); schedule.add_argument('--interval', type=int, choices=(15, 60), default=15); schedule.add_argument('--paused', action='store_true')
     php = sub.add_parser('php', help='PHP branches and rebuilds').add_subparsers(dest='verb', required=True)
     php.add_parser('versions', help='the catalogue and built images'); php.add_parser('refresh', help='refresh the catalogue')
@@ -140,6 +142,8 @@ def main():
     if noun == 'backup':
         if verb == 'status': return out(rpc({'op': 'backup-destination'}))
         if verb == 'copy': return out(rpc({'op': 'backup-remote'}))
+        if verb == 'card': return out(rpc({'op': 'backup-card'}))
+        if verb == 'connect-card': return out(rpc({'op': 'backup-connect-card', 'card': open(args.file).read()}))
         if verb == 'schedule': return out(rpc({'op': 'backup-schedule', 'site_id': site_row(args.name)['id'], 'interval': args.interval, 'enabled': not args.paused}))
     if noun == 'php':
         if verb == 'versions': return out(rpc({'op': 'versions'}))

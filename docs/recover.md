@@ -4,10 +4,12 @@ Restoration is a server feature. Reeve finds every site that was backed up to a 
 folder of backups or the server's own copies, and brings back the ones you choose, at the point
 in time you choose, as new sites or into live ones.
 
-## Keep these outside the server
+## Keep this outside the server
 
-- The backup destination address and its repository password.
-- For SFTP, the credentials or a way to authorise a new server's key, and the host key fingerprint.
+The **recovery card**: on **Backups**, next to the repository password, **Download recovery
+card** gives one small file with the destination address, its pinned host keys, this server's
+credentials and the repository password. Keep it in a password manager. It is the whole way into
+the backups, so treat it as the backups themselves. `sudo reeve backup card` prints the same.
 
 Nothing else. A replacement server makes its own WireGuard tunnel; the old client
 configurations do not carry over. The repository holds a **server record** beside the site backups: the server's
@@ -18,8 +20,10 @@ written whenever something changes and copied with the backups.
 
 1. Install Reeve on a fresh Debian 13 server as in [Install](install.md); the release that
    made the backups or any newer one.
-2. On **Backups**, connect the same destination and choose **existing repository password**.
-   Leave uploads paused: two servers must not write to one repository.
+2. On **Backups**, **Connect from the card**. The server connects with the recorded host keys
+   and credentials, to the very repository the card names, with uploads paused: two servers
+   must not write to one repository. Without a card, connect the destination by hand and choose
+   **existing repository password**.
 3. On **Recover**, scan the repository. It lists the sites found, each with its complete
    backups and database dumps by time, and the server record. Apply the recorded settings,
    tick the sites, keep or change their names and hostnames, and press **Restore the selected
@@ -29,6 +33,7 @@ written whenever something changes and copied with the backups.
 The same from the command line:
 
 ```sh
+sudo reeve backup connect-card reeve-recovery-card.json
 sudo reeve server scan
 sudo reeve server restore --settings
 sudo reeve server recoveries

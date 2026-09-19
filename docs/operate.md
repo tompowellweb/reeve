@@ -88,9 +88,9 @@ before making other changes to the site.
 
 ![A site's backups page](images/site-backups.png)
 
-Connect an SFTP or Amazon S3 destination on the server's **Backups** page. Save the repository
-password outside the server. For SFTP, also keep the destination's host key fingerprint and
-a way to authorise access from a replacement machine.
+Connect an SFTP or Amazon S3 destination on the server's **Backups** page, then download the
+**recovery card** and keep it in a password manager: it holds the address, host keys,
+credentials and repository password a replacement server needs, in one file.
 
 The default schedule is:
 

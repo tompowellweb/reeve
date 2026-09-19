@@ -35,13 +35,13 @@ and run `systemctl restart ssh`. Use the new account for everything below.
 
 ## Install Reeve
 
-The example below installs release `v1.4.0`.
+The example below installs release `v1.4.1`.
 
 ```sh
 sudo apt-get install -y git
 git clone https://github.com/tompowellweb/reeve.git
 cd reeve
-git checkout v1.4.0
+git checkout v1.4.1
 sudo python3 install.py
 ```
 
@@ -105,8 +105,8 @@ sudo reeve password
 Open **Settings** and choose the server profile that matches the machine (`small` for
 2–4 GB).
 
-Connect a backup destination on the **Backups** page and save its repository password
-outside the server. See [Operate](operate.md) for mail settings, site creation and updates.
+Connect a backup destination on the **Backups** page and keep its recovery card outside the
+server. See [Operate](operate.md) for mail settings, site creation and updates.
 
 Sites get certificates from the edge's own certificate authority until you switch to public
 ones on **Settings**, once the sites' names point at this server and ports 80 and 443 are
