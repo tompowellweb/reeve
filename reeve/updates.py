@@ -13,7 +13,20 @@ import sys
 import time
 from pathlib import Path
 
-from .host import OPS, atomic, command, trusted
+from .host import ENV, OPS, atomic, trusted
+
+
+def command(args, timeout=120):
+    """Git for the update. The host's helper caps the files a child may write at 1 MiB to bound noisy output, and
+    git's pack files exceed that once a repository holds images: a fresh install could not clone for its first
+    update ("invalid index-pack output"). Output here is bounded by reading, never by a limit on the child."""
+    try:
+        proc = subprocess.run([str(a) for a in args], capture_output=True, env=ENV, cwd='/', timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f'{args[0]} timed out') from None
+    text = (proc.stdout + proc.stderr)[-1048576:].decode(errors='replace')
+    if proc.returncode: raise RuntimeError(f'{args[0]} failed ({proc.returncode}): {text[-1200:]}')
+    return text
 
 RECORD = OPS / 'panel/release.json'
 STATE = OPS / 'panel/worker/update-check.json'

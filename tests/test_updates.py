@@ -72,3 +72,13 @@ def test_apply_fetches_the_tag_and_runs_the_installer(box, monkeypatch, tmp_path
     with pytest.raises(ValueError): up.apply('nonsense')
     monkeypatch.setattr(up.subprocess, 'run', lambda args, cwd=None: type('R', (), {'returncode': 1})())
     with pytest.raises(RuntimeError): up.apply()
+
+
+def test_the_update_runs_git_without_the_helpers_file_size_cap(tmp_path):
+    # The 1.1.9 droplet's first `reeve update` failed in `git clone`: the host helper's 1 MiB file cap broke index-pack.
+    big = tmp_path / 'pack'
+    assert up.command(['sh', '-c', f'head -c 3000000 /dev/zero > {big}']) == ''
+    assert big.stat().st_size == 3000000
+    assert 'git version' in up.command(['git', '--version'])
+    with pytest.raises(RuntimeError, match='failed'): up.command(['git', 'no-such-command'])
+    with pytest.raises(RuntimeError, match='timed out'): up.command(['sleep', '5'], timeout=0.2)

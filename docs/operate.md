@@ -149,6 +149,9 @@ sudo reeve update --check
 sudo reeve update
 ```
 
+If the command itself cannot run, update from your checkout instead: `git fetch --tags`, `git
+checkout vX.Y.Z`, `sudo python3 install.py`.
+
 Use `sudo reeve update --to <version>` for a specific release, including a compatible
 previous version. An update restarts the panel services; it does not roll back site content.
 
