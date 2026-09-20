@@ -469,6 +469,21 @@ def test_recover_page_offers_one_source_and_a_contextual_restore(setup, monkeypa
     assert reply.status_code == 200 and 'Recoveries' in reply.text
     rows = restoration.recoveries(ledger)
     assert sorted((r['mode'], r['backup_id']) for r in rows) == sorted([('dump', dump), ('new', other)])
+    # Manage mode lists every backup with a download and a deletion; a whole site's deletion needs its name typed.
+    page = client.get('/recover?mode=manage').text
+    assert 'Backups found' in page and page.count('name="backup" value="site:' + backup + '"') >= 2 and 'name="backup" value="dump:' + dump + '"' in page
+    assert 'Delete every backup of blog' in page and 'Downloads and deletions' in page
+    token = csrf(client.get('/recover?mode=manage'))
+    reply = client.post('/recover/manage', data={'csrf': token, 'action': 'delete', 'site': 'blog', 'confirm': 'wrong', 'backup': ['site:' + other]})
+    assert 'Type the site name exactly' in reply.text and not restoration.actions(ledger)
+    reply = client.post('/recover/manage', data={'csrf': token, 'action': 'download', 'backup': ['site:' + backup]})
+    assert reply.status_code == 200 and 'download · queued' in reply.text
+    reply = client.post('/recover/manage', data={'csrf': token, 'action': 'delete', 'site': 'blog', 'confirm': 'blog', 'backup': ['site:' + other]})
+    assert 'recovery or another action is using that backup' in reply.text   # the restore queued above still holds it
+    for r in rows: restoration.update(ledger, r['id'], 'succeeded', 'done')
+    reply = client.post('/recover/manage', data={'csrf': token, 'action': 'delete', 'site': 'blog', 'confirm': 'blog', 'backup': ['site:' + other]})
+    assert reply.status_code == 200 and 'delete · queued' in reply.text
+    assert sorted((a['action'], a['backup_id']) for a in restoration.actions(ledger)) == sorted([('download', backup), ('delete', other)])
 
 
 def test_a_tunnel_address_passes_the_host_check_but_other_names_do_not(setup):

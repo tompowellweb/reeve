@@ -9,6 +9,7 @@ Nothing here restores by itself; every step is the ordinary site restore, which 
 before touching a live site.
 """
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -26,6 +27,8 @@ MANIFESTS = OPS / 'panel/worker/recovery-manifests'
 FETCH = BACKUPS / 'staging/restore-fetch'
 MODES = ('new', 'files', 'database', 'both', 'dump')
 STATES = ('queued', 'fetching', 'restoring', 'waiting', 'hostnames', 'succeeded', 'failed', 'recovery-needed')
+ACTIONS = ('download', 'delete')
+ACTION_STATES = ('queued', 'running', 'succeeded', 'failed')
 
 
 def initialize(db):
@@ -34,6 +37,11 @@ def initialize(db):
         mode TEXT NOT NULL, target TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '', domains TEXT NOT NULL DEFAULT '[]',
         site_name TEXT NOT NULL DEFAULT '', child TEXT NOT NULL DEFAULT '', phase TEXT NOT NULL DEFAULT '',
         state TEXT NOT NULL, step TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', created REAL NOT NULL, updated REAL NOT NULL)""")
+    db.execute("""CREATE TABLE IF NOT EXISTS backup_actions (
+        id TEXT PRIMARY KEY, action TEXT NOT NULL, kind TEXT NOT NULL, backup_id TEXT NOT NULL, source TEXT NOT NULL,
+        snapshot TEXT NOT NULL DEFAULT '', site_name TEXT NOT NULL DEFAULT '', bytes INTEGER NOT NULL DEFAULT 0,
+        state TEXT NOT NULL, step TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', result TEXT NOT NULL DEFAULT '',
+        created REAL NOT NULL, updated REAL NOT NULL)""")
 
 
 # ---- discovery
@@ -203,8 +211,10 @@ def group(entries, ledger):
     """Pure given the entries: sites as the operator knows them, each with its backups newest first, its dumps,
     and the live site on this server with the same name, if any."""
     live = {row['name']: row for row in ledger.list()}
+    copied = offsite_copies(ledger)
     by_name = {}
     for entry in entries:
+        if entry['source'] == 'local' and copied is not None: entry['offsite'] = copied.get(entry['id'], 'waiting')
         site = by_name.setdefault(entry['site_name'] or '(unnamed)', {'name': entry['site_name'] or '(unnamed)', 'site_ids': [], 'site_kind': None, 'runtime': None,
                                                                           'domains': [], 'backups': [], 'dumps': [], 'live': None})
         if entry.get('site_id') and entry['site_id'] not in site['site_ids']: site['site_ids'].append(entry['site_id'])
@@ -220,12 +230,23 @@ def group(entries, ledger):
         for backup in site['backups']:
             for domain in backup.get('domains') or []:
                 if domain not in seen: seen.add(domain); site['domains'].append(domain)
+        site['local_bytes'] = sum(e.get('bytes') or 0 for e in site['backups'] + site['dumps'] if e['source'] == 'local')
         row = live.get(site['name'])
         if row:
             payload = json.loads(row['payload'])
             site['live'] = {'id': row['id'], 'name': row['name'], 'state': row['state'], 'runtime': payload.get('runtime'),
                             'managed': sites.kind_of(row) == 'managed', 'domains': ledger.domains(row)}
     return sorted(by_name.values(), key=lambda s: s['name'])
+
+
+def offsite_copies(ledger):
+    """Which local artifacts the connected destination holds: job id to 'verified' or 'forgotten'; None without a destination."""
+    from . import remote_backup as remote
+    config = remote.settings(require_id=False)
+    if not config: return None
+    with ledger.db() as db:
+        rows = db.execute('SELECT job_id, verified, forgotten FROM remote_copies WHERE destination=?', (config['destination'],)).fetchall()
+    return {r['job_id']: ('forgotten' if r['forgotten'] else 'verified' if r['verified'] else 'waiting') for r in rows}
 
 
 def perform_scan(ledger):
@@ -336,6 +357,7 @@ def recover(ledger):
     """Startup: a recovery interrupted while fetching or handing over needs a look; one that was only waiting resumes."""
     with ledger.db() as db:
         db.execute("UPDATE recoveries SET state='recovery-needed', error='The worker stopped during this step', updated=? WHERE state IN ('fetching','restoring')", (time.time(),))
+        db.execute("UPDATE backup_actions SET state='failed', error='The worker stopped during this action; queue it again', updated=? WHERE state='running'", (time.time(),))
 
 
 def fetch(row):
@@ -434,11 +456,150 @@ def perform(ledger, host, row):
 
 
 def tick(ledger, host):
-    """The worker's pass: a requested scan, then one step of the oldest unfinished recovery."""
+    """The worker's pass: a requested scan, one step of the oldest unfinished recovery, then one backup action."""
     perform_scan(ledger)
     pending = recoveries(ledger, active=True)
     if pending: perform(ledger, host, pending[0])
+    waiting = actions(ledger, active=True)
+    if waiting: perform_action(ledger, waiting[0])
 
 
 def status(ledger):
-    return {'scan': read_scan(), 'recoveries': recoveries(ledger)}
+    return {'scan': read_scan(), 'recoveries': recoveries(ledger), 'actions': actions(ledger)}
+
+
+# ---- managing what the scan found: download a backup, or let one go
+
+def actions(ledger, active=False):
+    with ledger.db() as db:
+        rows = db.execute("SELECT * FROM backup_actions WHERE state IN ('queued','running') ORDER BY created" if active
+                          else 'SELECT * FROM backup_actions ORDER BY created DESC LIMIT 100').fetchall()
+    result = []
+    for r in rows:
+        row = dict(r)
+        try: row['result'] = json.loads(row['result']) if row['result'] else None
+        except ValueError: row['result'] = None
+        result.append(row)
+    return result
+
+
+def submit_actions(ledger, items):
+    """Queue downloads and deletions from the page's picks: [{action, backup: 'site:<id>' | 'dump:<id>'}]. Every pick
+    must be in the last scan; a backup that a recovery is using cannot be deleted. Deleting is final for that copy only:
+    a local artifact's repository copy stays, and a repository snapshot's local copy stays."""
+    scan = read_scan()
+    if not scan or scan.get('state') != 'succeeded': raise ValueError('Scan first')
+    if not isinstance(items, list) or not items: raise ValueError('Choose at least one backup')
+    busy = {r['backup_id'] for r in recoveries(ledger, active=True)} | {a['backup_id'] for a in actions(ledger, active=True)}
+    queued = []
+    for item in items:
+        action = str(item.get('action', ''))
+        if action not in ACTIONS: raise ValueError('Unknown backup action')
+        backup = str(item.get('backup', ''))
+        if not backup.startswith(('site:', 'dump:')): raise ValueError('Name a backup or a dump')
+        kind, ident = backup.split(':', 1)
+        entry = find_entry(scan, kind, ident)
+        if not entry: raise ValueError('That backup is not in the last scan; scan again')
+        if entry['id'] in busy: raise ValueError('A recovery or another action is using that backup; wait for it to finish')
+        if action == 'delete' and entry['source'].startswith('folder:') and Path(entry['source'][7:]) == Path(scan.get('folder') or '/nonexistent'):
+            raise ValueError('That folder is one backup by itself; remove the folder by hand')
+        queued.append({'id': str(uuid.uuid4()), 'action': action, 'kind': kind, 'backup_id': entry['id'], 'source': entry['source'],
+                       'snapshot': entry.get('snapshot') or '', 'site_name': entry.get('site_name') or '', 'bytes': entry.get('bytes') or 0})
+        busy.add(entry['id'])
+    now = time.time()
+    with ledger.db() as db:
+        for row in queued:
+            db.execute('INSERT INTO backup_actions (id, action, kind, backup_id, source, snapshot, site_name, bytes, state, step, error, result, created, updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                       (row['id'], row['action'], row['kind'], row['backup_id'], row['source'], row['snapshot'], row['site_name'], int(row['bytes']), 'queued', 'queued', '', '', now, now))
+    return [r['id'] for r in queued]
+
+
+def update_action(ledger, ident, state, step, error='', result=None):
+    if state not in ACTION_STATES: raise ValueError('Unknown action state')
+    with ledger.db() as db:
+        db.execute('UPDATE backup_actions SET state=?, step=?, error=?, updated=?, result=COALESCE(?, result) WHERE id=?',
+                   (state, step, error[:2000], time.time(), json.dumps(result) if result is not None else None, ident))
+
+
+def forget_entry(kind, ident):
+    """The scan no longer lists a backup that is gone."""
+    scan = read_scan()
+    if not scan or not scan.get('sites'): return
+    for site in scan['sites']:
+        key = 'backups' if kind == 'site' else 'dumps'
+        site[key] = [e for e in site[key] if e['id'] != ident]
+        site['local_bytes'] = sum(e.get('bytes') or 0 for e in site['backups'] + site['dumps'] if e['source'] == 'local')
+    scan['sites'] = [s for s in scan['sites'] if s['backups'] or s['dumps']]
+    write_scan(scan)
+
+
+def export_dump(ident):
+    """A dump's file and manifest in the web-readable folder, as site_backup.export does for a complete backup."""
+    root = dumps.artifact_path(ident)
+    manifest = json.loads((root / 'manifest.json').read_text())
+    if manifest.get('kind') != 'local-database-dump': raise ValueError('Not a database dump.')
+    uid, gid = sites.web_identity()
+    sites.EXPORTS.mkdir(mode=0o700, exist_ok=True); os.chown(sites.EXPORTS, uid, gid)
+    token = str(uuid.uuid4()); folder = sites.EXPORTS / token; folder.mkdir(mode=0o700); os.chown(folder, uid, gid)
+    listed = []
+    for name in (manifest['file'], 'manifest.json'):
+        shutil.copyfile(root / name, folder / name); os.chmod(folder / name, 0o600); os.chown(folder / name, uid, gid)
+        listed.append({'name': name, 'bytes': (folder / name).stat().st_size})
+    return {'token': token, 'files': listed, 'expires_at': time.time() + sites.EXPORT_TTL}
+
+
+def delete_local(ledger, row):
+    module = dumps if row['kind'] == 'dump' else sites
+    target = module.artifact_path(row['backup_id'])
+    if target.is_dir() and not target.is_symlink():
+        trusted(target, directory=True); shutil.rmtree(target)
+    manifest_cache(row['backup_id']).unlink(missing_ok=True)
+    if row['kind'] == 'dump': ledger.finish_backup(row['backup_id'], 'pruned', 'removed by the operator')
+    else:
+        with ledger.db() as db: kept = db.execute('SELECT manifest FROM site_backups WHERE id=?', (row['backup_id'],)).fetchone()
+        manifest = None
+        if kept and kept['manifest']:
+            try: manifest = json.loads(kept['manifest'])
+            except ValueError: manifest = None
+        ledger.finish_site_backup(row['backup_id'], 'pruned', 'removed by the operator', manifest)
+    return 'removed from this server' + ('; the repository copy stays' if row.get('offsite') == 'verified' else '')
+
+
+def delete_remote(ledger, row):
+    from . import remote_backup as remote
+    config = remote.settings()
+    if not config: raise ValueError('No backup destination is connected')
+    if not row['snapshot']: raise ValueError('The scan did not record a snapshot for this backup')
+    remote.execute(config, ['forget', row['snapshot']])
+    with ledger.db() as db:
+        db.execute('UPDATE remote_copies SET forgotten=? WHERE destination=? AND job_id=?', (time.time(), config['destination'], row['backup_id']))
+    remote.execute(config, ['prune'], maximum=64 * 1024**2)
+    return 'forgotten and the repository pruned; a local copy, if any, stays'
+
+
+def delete_folder(row):
+    origin = Path(row['source'][len('folder:'):])
+    if not (origin / 'manifest.json').is_file(): raise ValueError('The folder no longer holds this backup')
+    shutil.rmtree(origin)
+    return 'removed from the folder'
+
+
+def perform_action(ledger, row):
+    """One backup action, whole: a download makes the artifact local if it is not, then prepares the files for six hours;
+    a deletion removes the copy the scan listed and nothing else."""
+    ident = row['id']
+    try:
+        update_action(ledger, ident, 'running', 'working')
+        if row['action'] == 'download':
+            fetched = fetch({'mode': 'dump' if row['kind'] == 'dump' else 'site', 'backup_id': row['backup_id'], 'source': row['source'], 'snapshot': row['snapshot']})
+            result = export_dump(row['backup_id']) if row['kind'] == 'dump' else sites.export(row['backup_id'])
+            update_action(ledger, ident, 'succeeded', fetched + '; files ready for six hours', result=result)
+            return
+        if row['source'] == 'local': how = delete_local(ledger, row)
+        elif row['source'] == 'repository': how = delete_remote(ledger, row)
+        elif row['source'].startswith('folder:'): how = delete_folder(row)
+        else: raise ValueError('Unknown backup source')
+        forget_entry(row['kind'], row['backup_id'])
+        update_action(ledger, ident, 'succeeded', how)
+    except Exception as exc:
+        update_action(ledger, ident, 'failed', row['step'] if row['state'] != 'queued' else 'working', str(exc))

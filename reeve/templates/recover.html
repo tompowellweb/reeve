@@ -1,6 +1,7 @@
 {% extends 'base.html' %}{% block title %}Recover · Reeve{% endblock %}{% block content %}
 {% macro when(value) %}{% if value %}<time data-timestamp="{{value}}">{{value|timestamp}}</time>{% else %}unknown time{% endif %}{% endmacro %}
-<a class="breadcrumb" href="/">← Sites</a><div class="heading"><div><h1>Recover</h1><p class="muted">Every site that was backed up, from the connected repository, a folder of backups or this server's own copies. Pick sites and points in time; each comes back as a new site or into a live one.</p></div></div>
+<a class="breadcrumb" href="/">← Sites</a><div class="heading"><div><h1>Recover</h1><p class="muted">{% if mode == 'manage' %}Every backup the last scan found, with its size and where it is. Download one, or let one go to free the space.{% else %}Every site that was backed up, from the connected repository, a folder of backups or this server's own copies. Pick sites and points in time; each comes back as a new site or into a live one.{% endif %}</p></div>
+<nav class="site-nav" aria-label="Mode"><a href="/recover"{% if mode != 'manage' %} aria-current="page"{% endif %}>Restore</a><a href="/recover?mode=manage"{% if mode == 'manage' %} aria-current="page"{% endif %}>Manage</a></nav></div>
 {% if error %}<p class="error">{{error}}</p>{% endif %}
 {% set scan = status.scan %}
 <section class="card" id="recovery-scan" data-state="{{'running' if scan and scan.state in ('requested', 'running') else 'idle'}}"><h2>Look for backups</h2>
@@ -14,7 +15,34 @@
 {% if scan.record %}<section class="card"><h2>Server record</h2><p><strong>{{scan.record.hostname}}</strong> · Reeve {{scan.record.version or '?'}} · {{scan.record.sites|length}} site{{'' if scan.record.sites|length == 1 else 's'}} at the time{% if scan.record.written_at %} · written {{when(scan.record.written_at)}}{% endif %}</p>
 <p class="compact-note">The server's settings (certificates, mail, profile, backups, updates) as recorded. Applying them here sets this server up the same way; certificates and mail take effect at once.</p>
 <form method="post" action="/recover/settings"><input type="hidden" name="csrf" value="{{session.csrf}}"><button class="secondary">Apply the recorded settings</button></form></section>{% endif %}
-<section class="card"><h2>Sites found</h2>
+<section class="card"><h2>{{'Backups found' if mode == 'manage' else 'Sites found'}}</h2>
+{% if mode == 'manage' %}{% if scan.sites %}
+{% set ns = namespace(local=0) %}{% for site in scan.sites %}{% set ns.local = ns.local + (site.local_bytes or 0) %}{% endfor %}
+<p class="compact-note">{{ns.local|size}} of this server's copies are listed{% if destination.local and destination.local.exists %} · {{destination.local.free|size}} free on that filesystem{% endif %}. Deleting removes the one copy listed: a copy here leaves the repository's, and a repository snapshot leaves the copy here. Final and imported backups, which retention never touches, can be let go here.</p>
+{% for site in scan.sites %}
+<article class="task-summary"><div class="section-heading"><h3 style="margin:0">{{site.name}}{% if site.live %} <span class="badge good">live as {{site.live.name}}</span>{% else %} <span class="badge">not on this server</span>{% endif %}</h3>
+<div class="row-actions"><span class="muted">{{site.backups|length}} backup{{'' if site.backups|length == 1 else 's'}}{% if site.dumps %}, {{site.dumps|length}} dump{{'' if site.dumps|length == 1 else 's'}}{% endif %}{% if site.local_bytes %} · {{site.local_bytes|size}} here{% endif %}</span>
+<button type="button" class="secondary danger-text" data-dialog="delete-site-{{loop.index}}">Delete all</button></div></div>
+<table class="recover-table"><thead><tr><th>When</th><th>What</th><th>Size</th><th>Where</th><th></th></tr></thead><tbody>
+{% for b in site.backups %}<tr><td>{{when(b.completed_at)}}</td><td>complete backup{% if b.backup_kind %} · {{b.backup_kind}}{% endif %}{% if b.has_dump %} · with database{% elif b.has_dump is sameas false %} · files only{% endif %}</td><td>{{b.bytes|size if b.bytes else '?'}}</td>
+<td>{% if b.source == 'local' %}here{% if b.offsite == 'verified' %} · copied off-machine{% elif b.offsite == 'waiting' %} · <span class="danger-text">not yet copied off-machine</span>{% endif %}{% elif b.source == 'repository' %}repository{% else %}folder{% endif %}</td>
+<td class="row-actions"><form method="post" action="/recover/manage" class="inline-form"><input type="hidden" name="csrf" value="{{session.csrf}}"><input type="hidden" name="action" value="download"><input type="hidden" name="backup" value="site:{{b.id}}"><button class="secondary">Download</button></form>
+<form method="post" action="/recover/manage" class="inline-form" data-confirm="Delete this complete backup of {{site.name}} from {{'this server' if b.source == 'local' else 'the repository' if b.source == 'repository' else 'the folder'}}?"><input type="hidden" name="csrf" value="{{session.csrf}}"><input type="hidden" name="action" value="delete"><input type="hidden" name="backup" value="site:{{b.id}}"><button class="secondary danger-text">Delete</button></form></td></tr>
+{% endfor %}
+{% for d in site.dumps %}<tr><td>{{when(d.completed_at)}}</td><td>database dump{% if d.engine %} · {{d.engine}}{% endif %}</td><td>{{d.bytes|size if d.bytes else '?'}}</td>
+<td>{% if d.source == 'local' %}here{% if d.offsite == 'verified' %} · copied off-machine{% elif d.offsite == 'waiting' %} · <span class="danger-text">not yet copied off-machine</span>{% endif %}{% elif d.source == 'repository' %}repository{% else %}folder{% endif %}</td>
+<td class="row-actions"><form method="post" action="/recover/manage" class="inline-form"><input type="hidden" name="csrf" value="{{session.csrf}}"><input type="hidden" name="action" value="download"><input type="hidden" name="backup" value="dump:{{d.id}}"><button class="secondary">Download</button></form>
+<form method="post" action="/recover/manage" class="inline-form" data-confirm="Delete this database dump of {{site.name}}?"><input type="hidden" name="csrf" value="{{session.csrf}}"><input type="hidden" name="action" value="delete"><input type="hidden" name="backup" value="dump:{{d.id}}"><button class="secondary danger-text">Delete</button></form></td></tr>
+{% endfor %}</tbody></table></article>
+<dialog id="delete-site-{{loop.index}}"><div class="dialog-heading"><h2>Delete every backup of {{site.name}}</h2><button type="button" class="quiet close-dialog" data-close-dialog aria-label="Close">×</button></div>
+<form method="post" action="/recover/manage"><input type="hidden" name="csrf" value="{{session.csrf}}"><input type="hidden" name="action" value="delete"><input type="hidden" name="site" value="{{site.name}}">
+{% for b in site.backups %}<input type="hidden" name="backup" value="site:{{b.id}}">{% endfor %}{% for d in site.dumps %}<input type="hidden" name="backup" value="dump:{{d.id}}">{% endfor %}
+<p>{{site.backups|length}} complete backup{{'' if site.backups|length == 1 else 's'}}{% if site.dumps %} and {{site.dumps|length}} dump{{'' if site.dumps|length == 1 else 's'}}{% endif %} as listed, {{(site.local_bytes or 0)|size}} of it on this server.{% if site.live %} The live site <strong>{{site.live.name}}</strong> is not touched, but until its next backup it has nothing to go back to.{% else %} Nothing else holds this site; once these are gone it cannot be restored.{% endif %}</p>
+<label>Type the site name to confirm<input name="confirm" autocomplete="off" required></label><button class="danger-text">Delete all of {{site.name}}'s backups</button></form></dialog>
+{% endfor %}
+{% else %}<p class="empty-summary">Nothing found there.</p>{% endif %}
+{% else %}
+
 {% if scan.sites %}
 <form method="post" action="/recover/submit"><input type="hidden" name="csrf" value="{{session.csrf}}">
 <table class="recover-table"><thead><tr><th></th><th>Site</th><th>From</th><th>Restore</th></tr></thead><tbody>
@@ -28,6 +56,7 @@
 <p class="compact-note">A restore into a live site takes a complete backup of it first. Restores run one after another; uploads to the repository stay paused until you resume them on the Backups page.</p>
 <button>Restore the selected sites</button></form>
 {% else %}<p class="empty-summary">Nothing found there.</p>{% endif %}
+{% endif %}
 </section>
 {% endif %}
 <section class="card" id="progress" data-state="{{'running' if status.recoveries|selectattr('state', 'in', ['queued', 'fetching', 'restoring', 'waiting', 'hostnames'])|list else 'idle'}}"><h2>Recoveries</h2>
@@ -35,4 +64,11 @@
 {% if r.state in ('failed', 'recovery-needed') %}<form method="post" action="/recover/retry/{{r.id}}"><input type="hidden" name="csrf" value="{{session.csrf}}"><button class="secondary">Retry</button></form>{% endif %}</article>
 {% else %}<p class="empty-summary">No recoveries yet.</p>{% endfor %}
 </section>
+{% if mode == 'manage' or status.actions %}<section class="card" id="actions" data-state="{{'running' if status.actions|selectattr('state', 'in', ['queued', 'running'])|list else 'idle'}}"><h2>Downloads and deletions</h2>
+{% for a in status.actions %}<article class="summary-row"><div><strong>{{a.site_name or a.backup_id[:8]}}</strong> <span class="badge{% if a.state == 'succeeded' %} good{% elif a.state == 'failed' %} warn{% endif %}">{{a.action}} · {{a.state}}</span><small>{{'database dump' if a.kind == 'dump' else 'complete backup'}} · {{'here' if a.source == 'local' else 'repository' if a.source == 'repository' else 'folder'}}{% if a.bytes %} · {{a.bytes|size}}{% endif %} · {{a.step}} · {{when(a.updated)}}</small>
+{% if a.error %}<small class="error">{{a.error}}</small>{% endif %}
+{% if a.result and a.result.files %}<small>{% for f in a.result.files %}<a href="/downloads/{{a.result.token}}/{{f.name}}">{{f.name}}</a> · {{f.bytes|size}}{{' · ' if not loop.last}}{% endfor %}</small>{% endif %}</div></article>
+{% else %}<p class="empty-summary">Nothing downloaded or deleted yet.</p>{% endfor %}
+</section>{% endif %}
+<script defer src="/static/overview.js"></script>
 {% endblock %}

@@ -6,17 +6,29 @@ from fastapi.responses import RedirectResponse
 
 
 def routes(app, session, mutation, render, call):
-    def page(request, error=''):
+    def page(request, error='', mode='restore'):
         try: status = call({'op': 'recover-status'})
-        except (ValueError, OSError) as exc: status, error = {'scan': None, 'recoveries': []}, error or str(exc)
+        except (ValueError, OSError) as exc: status, error = {'scan': None, 'recoveries': [], 'actions': []}, error or str(exc)
         try: destination = call({'op': 'backup-destination'})
         except (ValueError, OSError): destination = {'state': 'unknown'}
-        return render(request, 'recover.html', status=status, destination=destination, error=error)
+        return render(request, 'recover.html', status=status, destination=destination, error=error, mode='manage' if mode == 'manage' else 'restore')
 
     @app.get('/recover')
-    def recover_page(request: Request, error: str = ''):
+    def recover_page(request: Request, error: str = '', mode: str = 'restore'):
         session(request)
-        return page(request, error=error)
+        return page(request, error=error, mode=mode)
+
+    @app.post('/recover/manage')
+    async def recover_manage(request: Request):
+        """Manage mode: download or delete the backups named by the form; a whole site's backups arrive as many names."""
+        form = await mutation(request)
+        action = str(form.get('action', ''))
+        backups = [str(v) for k, v in (form.multi_items() if hasattr(form, 'multi_items') else form.items()) if k == 'backup']
+        if action == 'delete' and form.get('confirm') is not None and str(form.get('confirm', '')).strip() != str(form.get('site', '')):
+            return page(request, error='Type the site name exactly to delete all of its backups.', mode='manage')
+        try: call({'op': 'recover-manage', 'items': [{'action': action, 'backup': b} for b in backups]})
+        except (ValueError, OSError) as exc: return page(request, error=str(exc), mode='manage')
+        return RedirectResponse('/recover?mode=manage#actions', 303)
 
     @app.post('/recover/scan')
     async def recover_scan(request: Request):

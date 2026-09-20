@@ -102,7 +102,8 @@ The default schedule is:
 
 Complete backups contain site files, volumes, a fresh database dump and site settings.
 Enable pausing during backup when the application needs writes stopped for a consistent copy.
-Final backups from deleted sites and imported backups do not expire automatically. The nightly
+Final backups from deleted sites and imported backups do not expire automatically; let them go
+on **Recover → Manage** when they are no longer wanted. The nightly
 hour, retention and the local folder (`/srv/backups` by default) are on **Settings**. A server
 record, the settings and every site's hostnames and latest backup, is copied to the repository
 beside the backups, so a replacement server can find what was hosted.

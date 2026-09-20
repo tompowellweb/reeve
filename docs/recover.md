@@ -62,6 +62,28 @@ Backups copied out of a server's `/srv/backups/staging` folders, or exported fro
 Backups page, can be scanned from any folder on this server: choose **A folder on this
 server** and give its path. A `server-record.json` in that folder is read too.
 
+## Manage backups
+
+**Recover → Manage** lists every backup the last scan found, by site: complete backups and
+database dumps, each with its time, size and where it is (here, the repository or the folder),
+and for a copy here whether it has been copied off-machine. Two actions:
+
+- **Download** prepares the files for six hours: `snapshot.tar` is the whole backup and can be
+  imported on any panel. A backup that is only in the repository or a folder is fetched here
+  first and then stays as a local copy.
+- **Delete** lets go of the one copy listed. Deleting a copy here leaves the repository's;
+  deleting a repository snapshot forgets it and prunes the repository, and leaves the copy here.
+  **Delete all** takes a site's every listed backup after you type its name. This is how a
+  deleted site's final backup, which retention never touches, is let go once it is no longer
+  wanted. A backup a recovery is using cannot be deleted until it finishes.
+
+Downloads and deletions run in the worker one after another and are listed at the foot of the
+page with their outcome.
+
+```sh
+sudo reeve server actions
+```
+
 ## Verify
 
 ```sh

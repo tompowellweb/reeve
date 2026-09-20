@@ -164,3 +164,89 @@ def test_tagged_dump_snapshots_need_no_manifest_and_newest_are_read_first(monkey
     assert [e['id'] for e in found] == [str(uuid.UUID(int=2)), str(uuid.UUID(int=1))]  # newest first; the dump came from its tags
     assert found[0]['kind'] == 'dump' and found[0]['engine'] == 'mariadb' and found[0]['from_tags']
     assert sum(1 for c in calls if c[0] == 'dump') == 1 and unread == 0 and record is None  # one manifest read, for the untagged copy
+
+
+def _artifact(module, ident, manifest, filename, body=b'x'):
+    root = module.artifact_path(ident); root.mkdir(parents=True)
+    (root / filename).write_bytes(body); (root / 'manifest.json').write_text(json.dumps({**manifest, 'operation': ident}))
+    return root
+
+
+def test_manage_picks_are_checked_and_deletions_remove_one_copy_only(world, monkeypatch, tmp_path):
+    ledger, live, scan = world
+    monkeypatch.setattr(rs.sites, 'STAGING', tmp_path / 'staging/site'); monkeypatch.setattr(rs.dumps, 'STAGING', tmp_path / 'staging/db')
+    monkeypatch.setattr(rs, 'trusted', lambda *a, **k: None)
+    shop_backup = scan['sites'][0]['backups'][0]['id']; blog_backup = scan['sites'][1]['backups'][0]['id']; shop_dump = scan['sites'][0]['dumps'][0]['id']
+    with pytest.raises(ValueError, match='Unknown backup action'): rs.submit_actions(ledger, [{'action': 'shred', 'backup': 'site:' + blog_backup}])
+    with pytest.raises(ValueError, match='not in the last scan'): rs.submit_actions(ledger, [{'action': 'delete', 'backup': 'site:' + str(uuid.UUID(int=99))}])
+    # A backup a recovery is using stays until the recovery finishes.
+    [rid] = rs.submit(ledger, [{'backup': blog_backup, 'mode': 'new', 'name': 'blog', 'domains': 'blog.example'}])
+    with pytest.raises(ValueError, match='recovery or another action'): rs.submit_actions(ledger, [{'action': 'delete', 'backup': 'site:' + blog_backup}])
+    rs.update(ledger, rid, 'succeeded', 'done')
+    # Local: the artifact folder goes, the ledger row says the operator removed it, the scan no longer lists it.
+    with ledger.db() as db:
+        db.execute("INSERT INTO site_backups (id, site_id, kind, state, step, error, manifest, created, updated) VALUES (?,?,?,?,?,?,?,1,1)",
+                   (blog_backup, live['id'], 'final', 'succeeded', 'done', '', json.dumps({'completed_at': 5})))
+    root = _artifact(rs.sites, blog_backup, SITE_MANIFEST, 'files.tar')
+    [aid] = rs.submit_actions(ledger, [{'action': 'delete', 'backup': 'site:' + blog_backup}])
+    assert rs.actions(ledger, active=True)[0]['id'] == aid
+    rs.perform_action(ledger, rs.actions(ledger, active=True)[0])
+    done = rs.actions(ledger)[0]
+    assert done['state'] == 'succeeded' and 'removed from this server' in done['step'] and not root.exists()
+    assert ledger.site_backups(live['id'], limit=None)[0]['state'] == 'pruned'
+    assert rs.find_entry(rs.read_scan(), 'site', blog_backup) is None and [s['name'] for s in rs.read_scan()['sites']] == ['shop']
+    # Repository: forget the snapshot, prune, record it; the local copy is not touched.
+    calls = []
+    monkeypatch.setattr('reeve.remote_backup.settings', lambda require_id=True: {'destination': 'sftp:x', 'repository': 'r', 'password_file': 'p', 'timeout_seconds': 5})
+    monkeypatch.setattr('reeve.remote_backup.execute', lambda config, args, **k: calls.append(args))
+    with ledger.db() as db: db.execute("INSERT INTO remote_copies (destination, job_id, snapshot, verified) VALUES ('sftp:x', ?, 'snap1', 9)", (shop_backup,))
+    local_copy = _artifact(rs.sites, shop_backup, SITE_MANIFEST, 'files.tar')
+    [aid] = rs.submit_actions(ledger, [{'action': 'delete', 'backup': 'site:' + shop_backup}])
+    rs.perform_action(ledger, rs.actions(ledger, active=True)[0])
+    assert calls == [['forget', 'snap1'], ['prune']] and local_copy.exists() and rs.actions(ledger)[0]['state'] == 'succeeded'
+    with ledger.db() as db: assert db.execute('SELECT forgotten FROM remote_copies WHERE job_id=?', (shop_backup,)).fetchone()[0] > 0
+    # A dump in the repository is deleted the same way; a failure is recorded with its reason.
+    monkeypatch.setattr('reeve.remote_backup.execute', lambda config, args, **k: (_ for _ in ()).throw(RuntimeError('repository is already locked')))
+    [aid] = rs.submit_actions(ledger, [{'action': 'delete', 'backup': 'dump:' + shop_dump}])
+    rs.perform_action(ledger, rs.actions(ledger, active=True)[0])
+    assert rs.actions(ledger)[0]['state'] == 'failed' and 'already locked' in rs.actions(ledger)[0]['error']
+    assert rs.find_entry(rs.read_scan(), 'dump', shop_dump) is not None
+
+
+def test_manage_downloads_fetch_then_export_and_folder_copies_can_go(world, monkeypatch, tmp_path):
+    ledger, live, scan = world
+    monkeypatch.setattr(rs.sites, 'STAGING', tmp_path / 'staging/site'); monkeypatch.setattr(rs.dumps, 'STAGING', tmp_path / 'staging/db')
+    monkeypatch.setattr(rs.sites, 'EXPORTS', tmp_path / 'downloads')
+    import pwd, os as _os
+    me = pwd.getpwuid(_os.getuid()); monkeypatch.setattr(rs.sites, 'web_identity', lambda: (me.pw_uid, me.pw_gid))
+    shop_backup = scan['sites'][0]['backups'][0]['id']; shop_dump = scan['sites'][0]['dumps'][0]['id']
+    fetched = []
+    monkeypatch.setattr(rs, 'fetch', lambda row: fetched.append(row['backup_id']) or 'fetched from the repository')
+    monkeypatch.setattr(rs.sites, 'export', lambda ident: {'token': 'tok', 'files': [{'name': 'snapshot.tar', 'bytes': 3}], 'expires_at': 9})
+    [aid] = rs.submit_actions(ledger, [{'action': 'download', 'backup': 'site:' + shop_backup}])
+    rs.perform_action(ledger, rs.actions(ledger, active=True)[0])
+    done = rs.actions(ledger)[0]
+    assert fetched == [shop_backup] and done['state'] == 'succeeded' and done['result']['token'] == 'tok' and 'six hours' in done['step']
+    # A dump download copies its file and manifest into the web folder.
+    _artifact(rs.dumps, shop_dump, {**DUMP_MANIFEST, 'file': 'database.sql'}, 'database.sql', b'CREATE TABLE t (x int);')
+    [aid] = rs.submit_actions(ledger, [{'action': 'download', 'backup': 'dump:' + shop_dump}])
+    rs.perform_action(ledger, rs.actions(ledger, active=True)[0])
+    done = rs.actions(ledger)[0]
+    assert done['state'] == 'succeeded' and {f['name'] for f in done['result']['files']} == {'database.sql', 'manifest.json'}
+    assert (rs.sites.EXPORTS / done['result']['token'] / 'database.sql').read_bytes() == b'CREATE TABLE t (x int);'
+    # A folder scan: an artifact subfolder can be deleted; the scanned folder itself cannot.
+    folder = tmp_path / 'old'; sub = folder / 'one'; sub.mkdir(parents=True)
+    (sub / 'manifest.json').write_text('{}'); (sub / 'files.tar').write_bytes(b'x')
+    other = str(uuid.UUID(int=21))
+    rs.write_scan({'state': 'succeeded', 'source': 'folder', 'folder': str(folder), 'sites': [
+        {'name': 'old', 'backups': [rs.entry_from_manifest({**SITE_MANIFEST, 'operation': other, 'site_name': 'old'}, 'folder:' + str(sub)),
+                                     rs.entry_from_manifest({**SITE_MANIFEST, 'operation': str(uuid.UUID(int=22)), 'site_name': 'old'}, 'folder:' + str(folder))], 'dumps': [], 'live': None}]})
+    with pytest.raises(ValueError, match='remove the folder by hand'): rs.submit_actions(ledger, [{'action': 'delete', 'backup': 'site:' + str(uuid.UUID(int=22))}])
+    [aid] = rs.submit_actions(ledger, [{'action': 'delete', 'backup': 'site:' + other}])
+    rs.perform_action(ledger, rs.actions(ledger, active=True)[0])
+    assert rs.actions(ledger)[0]['state'] == 'succeeded' and not sub.exists() and folder.exists()
+    # The worker stopping mid-action fails it with a reason; the page's status carries the list.
+    [aid] = rs.submit_actions(ledger, [{'action': 'download', 'backup': 'site:' + str(uuid.UUID(int=22))}])
+    with ledger.db() as db: db.execute("UPDATE backup_actions SET state='running' WHERE id=?", (aid,))
+    rs.recover(ledger)
+    assert rs.status(ledger)['actions'][0]['state'] == 'failed' and 'queue it again' in rs.status(ledger)['actions'][0]['error']

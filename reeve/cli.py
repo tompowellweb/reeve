@@ -81,6 +81,7 @@ def add_others(sub):
     server.add_parser('found', help='what the last scan found')
     restore = server.add_parser('restore', help='restore sites from the last scan as new sites, newest backup, recorded hostnames'); restore.add_argument('names', nargs='*', help='site names as found; none means every site'); restore.add_argument('--settings', action='store_true', help='also apply the recorded server settings')
     server.add_parser('recoveries', help='the recovery queue')
+    server.add_parser('actions', help='downloads and deletions of backups from the Recover page')
 
 
 def status():
@@ -192,6 +193,7 @@ def main():
             return out({k: scan.get(k) for k in ('state', 'source', 'error', 'unread')} | {'sites': [{'name': s['name'], 'backups': len(s['backups']), 'dumps': len(s['dumps']), 'live': bool(s.get('live')), 'domains': s['domains']} for s in scan.get('sites') or []], 'record': bool(scan.get('record'))})
         if verb == 'found': return out(rpc({'op': 'recover-status'})['scan'])
         if verb == 'recoveries': return out(rpc({'op': 'recover-status'})['recoveries'])
+        if verb == 'actions': return out(rpc({'op': 'recover-status'})['actions'])
         if verb == 'restore':
             scan = rpc({'op': 'recover-status'})['scan']
             if not scan or scan['state'] != 'succeeded': raise SystemExit('Scan first: reeve server scan')

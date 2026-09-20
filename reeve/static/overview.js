@@ -33,3 +33,7 @@ if (document.querySelector('.site-overview')) {
     if (!document.hidden && !document.querySelector('dialog[open], details[open], form:focus-within, [data-concern-panel]:not([hidden])')) window.location.reload();
   }, 30000);
 }
+// A form that says what it is about to do asks once before doing it.
+for (const form of document.querySelectorAll('form[data-confirm]')) {
+  form.addEventListener('submit', event => { if (!window.confirm(form.dataset.confirm)) event.preventDefault(); });
+}
