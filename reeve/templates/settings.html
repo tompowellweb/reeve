@@ -51,12 +51,20 @@
 <section class="card" id="backups"><h2>Backups</h2>
 <form method="post" action="/settings/backups"><input type="hidden" name="csrf" value="{{session.csrf}}">
 <div class="form-pair"><label>Nightly complete backup at (hour, UTC)<input name="hour" type="number" min="0" max="23" value="{{settings.backups.hour}}"></label><label>Local folder<input name="local_path" value="{{settings.backups.local_path}}"></label></div>
-<p class="compact-note">Keep complete site backups: every one for the first days, then one a day, one a week, one a month, for this many days each. Zero turns a tier off.</p>
-<div class="form-pair"><label>Every backup, days<input name="within_days" type="number" min="0" max="3650" value="{{settings.backups.within_days}}"></label><label>Daily, days<input name="daily_days" type="number" min="0" max="3650" value="{{settings.backups.daily_days}}"></label></div>
-<div class="form-pair"><label>Weekly, days<input name="weekly_days" type="number" min="0" max="3650" value="{{settings.backups.weekly_days}}"></label><label>Monthly, days<input name="monthly_days" type="number" min="0" max="3650" value="{{settings.backups.monthly_days}}"></label></div>
+<p class="compact-note">Keep complete site backups by count, the newest of each of the last so many days, weeks and months that have one. Zero turns a tier off; at least one daily is always kept. Two dailies here means about three times a site's size on this disk; the repository deduplicates, so it can keep far more.</p>
+<h3>Here, on this server</h3>
+<div class="form-pair"><label>Daily<input name="local_daily" type="number" min="1" max="3650" value="{{settings.backups.local_daily}}"></label><label>Weekly<input name="local_weekly" type="number" min="0" max="3650" value="{{settings.backups.local_weekly}}"></label></div>
+<label>Monthly<input name="local_monthly" type="number" min="0" max="3650" value="{{settings.backups.local_monthly}}"></label>
+<h3>Off-machine, in the repository</h3>
+<div class="form-pair"><label>Daily<input name="remote_daily" type="number" min="1" max="3650" value="{{settings.backups.remote_daily}}"></label><label>Weekly<input name="remote_weekly" type="number" min="0" max="3650" value="{{settings.backups.remote_weekly}}"></label></div>
+<label>Monthly<input name="remote_monthly" type="number" min="0" max="3650" value="{{settings.backups.remote_monthly}}"></label>
 <label>Keep database dumps, days<input name="database_days" type="number" min="1" max="3650" value="{{settings.backups.database_days}}"></label>
 <p class="compact-note">Changing the local folder needs the folder moved with the panel services stopped; the setting alone moves nothing.</p>
-<button>Save backups</button></form></section>
+<button>Save backups</button></form>
+{% if retention_surplus %}<div class="recovery-summary card" id="retention-confirm"><h3>Before these counts apply</h3>
+<p>The new counts remove backups that exist now: <strong>{{retention_surplus.local.count}}</strong> here ({{retention_surplus.local.bytes|size}}){% if retention_surplus.remote.count %} and <strong>{{retention_surplus.remote.count}}</strong> in the repository ({{retention_surplus.remote.bytes|size}}){% endif %}. Final and imported backups are not among them. Remove them, or keep them and apply the counts to what comes next; kept backups can be let go later on Recover → Manage.</p>
+<form method="post" action="/settings/backups" class="row-actions"><input type="hidden" name="csrf" value="{{session.csrf}}">{% for key, value in pending.items() %}<input type="hidden" name="{{key}}" value="{{value}}">{% endfor %}
+<button name="existing" value="remove" class="danger-text">Apply and remove them</button><button name="existing" value="keep" class="secondary">Apply but keep the existing ones</button></form></div>{% endif %}</section>
 <section class="card" id="updates"><h2>PHP rebuilds</h2>
 <form method="post" action="/settings/updates"><input type="hidden" name="csrf" value="{{session.csrf}}">
 <div class="form-pair"><label>Rebuild at (hour, UTC)<input name="hour" type="number" min="0" max="23" value="{{settings.updates.hour}}"></label><label>Every, days<input name="every_days" type="number" min="1" max="90" value="{{settings.updates.every_days}}"></label></div>

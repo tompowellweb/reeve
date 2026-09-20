@@ -9,12 +9,13 @@ def routes(app, session, mutation, render, call):
     def requester(request):
         return request.client.host if request.client else ''
 
-    def page(request, error='', saved=None, note='', secure_extra=None):
+    def page(request, error='', saved=None, note='', secure_extra=None, retention_surplus=None, pending=None):
         try: settings = call({'op': 'settings'})
         except (ValueError, OSError) as exc: settings, error = None, error or str(exc)
         try: secure = call({'op': 'secure-status', 'requester': requester(request)})
         except (ValueError, OSError) as exc: secure, error = None, error or str(exc)
-        return render(request, 'settings.html', settings=settings, titles=GROUP_TITLES, error=error, saved=saved, note=note, secure=secure, secure_extra=secure_extra or {})
+        return render(request, 'settings.html', settings=settings, titles=GROUP_TITLES, error=error, saved=saved, note=note, secure=secure, secure_extra=secure_extra or {},
+                      retention_surplus=retention_surplus, pending=pending or {})
 
     @app.post('/settings/secure/{action}')
     async def secure_action(request: Request, action: str):
@@ -51,6 +52,13 @@ def routes(app, session, mutation, render, call):
     async def settings_save(request: Request, group: str):
         form = await mutation(request)
         values = {k: str(v) for k, v in form.items() if k != 'csrf'}
+        if group == 'backups' and 'existing' not in values:
+            # Tighter counts remove backups that exist now: say how many and how much before doing it.
+            try: found = call({'op': 'settings-surplus', 'values': values})
+            except (ValueError, OSError) as exc: return page(request, error=str(exc))
+            if found['local']['count'] or found['remote']['count']:
+                return page(request, retention_surplus=found, pending=values)
+            values['existing'] = 'remove'
         try: result = call({'op': 'settings-save', 'group': group, 'values': values})
         except (ValueError, OSError) as exc: return page(request, error=str(exc))
         from urllib.parse import urlencode

@@ -256,22 +256,37 @@ def pending_sites(ledger, destination, site_id=None):
     return [r for r in rows if sites.artifact_path(r['id']).is_dir()]
 
 
+def remote_surplus(ledger, config, counts):
+    """The verified repository copies of complete backups that the given remote counts would forget."""
+    from .retention import keep_site_backups
+    destination = config['destination']
+    with ledger.db() as db:
+        site_rows = [dict(r) for r in db.execute('''SELECT s.id, s.site_id, s.kind, s.kept, s.manifest, r.snapshot FROM site_backups s
+            JOIN remote_copies r ON r.job_id=s.id AND r.destination=? WHERE r.verified>0 AND r.forgotten=0''', (destination,))]
+    by_site = {}
+    for s in site_rows: by_site.setdefault(s['site_id'], []).append(s)
+    surplus = []
+    for entries in by_site.values():
+        described = []
+        for s in entries:
+            manifest = json.loads(s['manifest']) if s['manifest'] else {}
+            described.append({'id': s['id'], 'kind': s['kind'], 'kept': bool(s.get('kept')), 'completed_at': manifest.get('completed_at')})
+            s['bytes'] = (manifest.get('files') or {}).get('bytes', 0) + sum(d.get('bytes', 0) for d in (manifest.get('dumps') or {}).values())
+        keep = keep_site_backups(described, time.time(), counts)
+        surplus += [s for s in entries if s['id'] not in keep]
+    return surplus
+
+
 def remote_retention(ledger, config, now=None):
-    """Forget remote snapshots outside the policy, then prune the repository at most daily."""
-    from .retention import policy as retention_policy, keep_dumps, keep_site_backups
+    """Forget remote snapshots outside the remote policy, then prune the repository at most daily."""
+    from .retention import policy as retention_policy, keep_dumps
     rule = retention_policy(); now = time.time() if now is None else now; destination = config['destination']
     with ledger.db() as db:
         dumps = [dict(r) for r in db.execute('''SELECT b.id, b.site_id, b.created, r.snapshot FROM backup_jobs b
             JOIN remote_copies r ON r.job_id=b.id AND r.destination=? WHERE r.verified>0 AND r.forgotten=0''', (destination,))]
-        site_rows = [dict(r) for r in db.execute('''SELECT s.id, s.site_id, s.kind, s.manifest, r.snapshot FROM site_backups s
-            JOIN remote_copies r ON r.job_id=s.id AND r.destination=? WHERE r.verified>0 AND r.forgotten=0''', (destination,))]
         cycle_row = db.execute('SELECT pruned_at FROM remote_cycles WHERE destination=?', (destination,)).fetchone()
     forget = [d for d in dumps if d['id'] not in keep_dumps(dumps, now, rule['database_days'])]
-    by_site = {}
-    for s in site_rows: by_site.setdefault(s['site_id'], []).append(s)
-    for entries in by_site.values():
-        keep = keep_site_backups([{'id': s['id'], 'kind': s['kind'], 'completed_at': (json.loads(s['manifest']).get('completed_at') if s['manifest'] else None)} for s in entries], now, rule['site'])
-        forget += [s for s in entries if s['id'] not in keep]
+    forget += remote_surplus(ledger, config, rule['remote'])
     if forget:
         execute(config, ['forget', *[f['snapshot'] for f in forget]])
         with ledger.db() as db:

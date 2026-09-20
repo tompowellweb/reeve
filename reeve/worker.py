@@ -40,7 +40,7 @@ def dispatch(message, ledger, host):
               "secure-revert": {"op"}, "secure-disable": {"op"}, "secure-add-client": {"op", "name"}, "secure-client": {"op", "name"},
               "secure-token": {"op"}, "secure-close-unlock": {"op"},
               "recover-status": {"op"}, "recover-scan": {"op", "source", "folder"}, "recover-submit": {"op", "items"},
-              "recover-retry": {"op", "id"}, "recover-settings": {"op"}, "recover-manage": {"op", "items"},
+              "recover-retry": {"op", "id"}, "recover-settings": {"op"}, "recover-manage": {"op", "items"}, "settings-surplus": {"op", "values"},
               "versions": {"op"}, "refresh-versions": {"op", "id"}, "php-rebuild": {"op", "id"}, "housekeeping": {"op"}, "sftp-key": {"op", "site_id"}, "backup-connect": {"op", "data"}, "backup-enabled": {"op", "enabled"}, "backup-disconnect": {"op"}, "backup-reveal": {"op"}, "backup-setup": {"op"}, "backup-server-key": {"op"}, "php-switch": {"op", "id", "site_id", "branch"},
               "php-rollback": {"op", "id", "site_id", "previous"}, "retry-runtime": {"op", "id"},
               "database-versions": {"op"}, "refresh-databases": {"op", "id"},
@@ -325,6 +325,9 @@ def dispatch(message, ledger, host):
     if op == "settings-save":
         from .settings import save
         return save(host, ledger, message["group"], message["values"] if isinstance(message["values"], dict) else {})
+    if op == "settings-surplus":
+        from .settings import surplus
+        return surplus(ledger, message["values"] if isinstance(message["values"], dict) else {})
     if op == "recover-status":
         from .restoration import status
         return status(ledger)

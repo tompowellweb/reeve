@@ -492,3 +492,20 @@ def test_a_tunnel_address_passes_the_host_check_but_other_names_do_not(setup):
     assert client.get('/login', headers={'host': '10.7.7.7'}).status_code == 200
     assert client.get('/login', headers={'host': 'evil.example'}).status_code == 400
     assert client.get('/login', headers={'host': '192.168.1.5:8088'}).status_code == 400
+
+
+def test_settings_page_shows_both_retention_policies_and_asks_before_removing_backups(setup, monkeypatch):
+    from reeve import settings as st
+    client, _, ledger = setup
+    login(client)
+    page = client.get('/settings').text
+    assert 'name="local_daily"' in page and 'name="remote_monthly"' in page and 'Here, on this server' in page
+    monkeypatch.setattr(st, 'surplus', lambda ledger, values: {'local': {'count': 3, 'bytes': 5 * 1048576, 'ids': ['a', 'b', 'c']}, 'remote': {'count': 0, 'bytes': 0, 'ids': []}})
+    saved = []
+    monkeypatch.setattr(st, 'save', lambda host, ledger, group, values: saved.append(values) or {'group': group, 'saved': {}, 'note': 'ok'})
+    values = {'csrf': csrf(client.get('/settings')), 'hour': '3', 'local_path': '/srv/backups', 'database_days': '2', 'local_daily': '1', 'local_weekly': '0', 'local_monthly': '0', 'remote_daily': '7', 'remote_weekly': '4', 'remote_monthly': '12'}
+    reply = client.post('/settings/backups', data=values)
+    assert 'Before these counts apply' in reply.text and '<strong>3</strong> here (5.0 MiB)' in reply.text and not saved
+    assert 'name="existing" value="keep"' in reply.text and 'name="local_daily" value="1"' in reply.text
+    reply = client.post('/settings/backups', data={**values, 'existing': 'keep'})
+    assert reply.status_code == 200 and saved and saved[0]['existing'] == 'keep'

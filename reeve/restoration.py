@@ -212,9 +212,11 @@ def group(entries, ledger):
     and the live site on this server with the same name, if any."""
     live = {row['name']: row for row in ledger.list()}
     copied = offsite_copies(ledger)
+    with ledger.db() as db: kept = {r[0] for r in db.execute('SELECT id FROM site_backups WHERE kept=1')}
     by_name = {}
     for entry in entries:
         if entry['source'] == 'local' and copied is not None: entry['offsite'] = copied.get(entry['id'], 'waiting')
+        if entry['id'] in kept: entry['kept'] = True
         site = by_name.setdefault(entry['site_name'] or '(unnamed)', {'name': entry['site_name'] or '(unnamed)', 'site_ids': [], 'site_kind': None, 'runtime': None,
                                                                           'domains': [], 'backups': [], 'dumps': [], 'live': None})
         if entry.get('site_id') and entry['site_id'] not in site['site_ids']: site['site_ids'].append(entry['site_id'])

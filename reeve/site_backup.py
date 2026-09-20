@@ -48,6 +48,8 @@ def initialize(db):
     db.execute("""CREATE TABLE IF NOT EXISTS site_backups (
         id TEXT PRIMARY KEY, site_id TEXT NOT NULL, kind TEXT NOT NULL, state TEXT NOT NULL, step TEXT NOT NULL,
         error TEXT NOT NULL, manifest TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL)""")
+    if 'kept' not in {r[1] for r in db.execute('PRAGMA table_info(site_backups)')}:
+        db.execute('ALTER TABLE site_backups ADD COLUMN kept INTEGER NOT NULL DEFAULT 0')   # chosen by the operator; no policy removes it
     db.execute("""CREATE TABLE IF NOT EXISTS site_deletes (
         id TEXT PRIMARY KEY, site_id TEXT NOT NULL, backup_id TEXT NOT NULL, state TEXT NOT NULL,
         step TEXT NOT NULL, error TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL)""")
@@ -414,19 +416,51 @@ def tick(ledger, now=None):
                        (next_run_after(now, settings['hour']), item['site_id'], item['next_run']))
 
 
-def prune(ledger, now=None):
-    """Tiered retention per live site; final and imported backups are never pruned."""
-    from .retention import policy as retention_policy, keep_site_backups
-    rule = retention_policy()['site']; now = time.time() if now is None else now
+def backup_bytes(manifest):
+    """What a complete backup weighs on disk, from its manifest."""
+    if not manifest: return 0
+    return (manifest.get('files') or {}).get('bytes', 0) + sum(d.get('bytes', 0) for d in (manifest.get('dumps') or {}).values()) \
+        + sum(v.get('bytes', 0) for v in (manifest.get('volumes') or {}).values())
+
+
+def local_surplus(ledger, counts, now=None):
+    """The complete backups here that the given local counts would remove, oldest first: succeeded, prunable
+    kinds, not kept by the operator, and, while a destination is connected, already copied off-machine
+    (a nightly backup pruned before the hourly copy ran would never reach the repository)."""
+    from .retention import keep_site_backups
+    from .remote_backup import settings as remote_settings, RemoteFailed
+    now = time.time() if now is None else now
+    try: config = remote_settings()
+    except RemoteFailed: config = {'destination': 'invalid', 'enabled': True}
+    with ledger.db() as db:
+        verified = {r[0] for r in db.execute('SELECT job_id FROM remote_copies WHERE destination=? AND verified>0', (config['destination'],))} if config else set()
+    surplus = []
     for row in ledger.list():
         succeeded = [j for j in ledger.site_backups(row['id'], limit=None) if j['state'] == 'succeeded']
-        entries = [{'id': j['id'], 'kind': j['kind'], 'completed_at': (json.loads(j['manifest']).get('completed_at') if j['manifest'] else None)} for j in succeeded]
-        keep = keep_site_backups(entries, now, rule)
-        for job in [j for j in succeeded if j['id'] not in keep and j['kind'] in PRUNABLE]:
-            root = artifact_path(job['id'])
-            if root.is_dir() and not root.is_symlink():
-                trusted(root, directory=True); shutil.rmtree(root)
-            ledger.finish_site_backup(job['id'], 'pruned', '', json.loads(job['manifest']) if job['manifest'] else None)
+        manifests = {j['id']: (json.loads(j['manifest']) if j['manifest'] else {}) for j in succeeded}
+        entries = [{'id': j['id'], 'kind': j['kind'], 'kept': bool(j.get('kept')), 'completed_at': manifests[j['id']].get('completed_at')} for j in succeeded]
+        keep = keep_site_backups(entries, now, counts)
+        for job in succeeded:
+            if job['id'] in keep or job['kind'] not in PRUNABLE: continue
+            if config and job['id'] not in verified: continue
+            surplus.append({**job, 'site_name': row['name'], 'bytes': backup_bytes(manifests[job['id']])})
+    return sorted(surplus, key=lambda j: j['created'])
+
+
+def prune(ledger, now=None):
+    """Tiered retention per live site by the local counts; final, imported and kept backups are never pruned."""
+    from .retention import policy as retention_policy
+    for job in local_surplus(ledger, retention_policy()['local'], now):
+        root = artifact_path(job['id'])
+        if root.is_dir() and not root.is_symlink():
+            trusted(root, directory=True); shutil.rmtree(root)
+        ledger.finish_site_backup(job['id'], 'pruned', '', json.loads(job['manifest']) if job['manifest'] else None)
+
+
+def mark_kept(ledger, idents):
+    """The operator's choice to keep these backups whatever the policy says; Manage on Recover lets them go."""
+    with ledger.db() as db:
+        for ident in idents: db.execute('UPDATE site_backups SET kept=1, updated=? WHERE id=?', (time.time(), ident))
 
 
 def package_archive(root, manifest, package):
@@ -583,7 +617,7 @@ def safety_backup(ledger, host, job, row):
     ledger.finish_site_restore(job['id'], 'running', 'safety backup of the current site')
     safety_id = str(uuid.uuid4()); now = time.time()
     with ledger.db() as db:
-        db.execute("INSERT INTO site_backups VALUES (?,?,'pre-restore','queued','','','',?,?)", (safety_id, row['id'], now, now))
+        db.execute("INSERT INTO site_backups (id, site_id, kind, state, step, error, manifest, created, updated) VALUES (?,?,'pre-restore','queued','','','',?,?)", (safety_id, row['id'], now, now))
         db.execute('UPDATE site_restores SET safety_backup=? WHERE id=?', (safety_id, job['id']))
     if not perform(ledger, host, {'id': safety_id, 'site_id': row['id'], 'kind': 'pre-restore'}):
         failed = next(b for b in ledger.site_backups(row['id']) if b['id'] == safety_id)
@@ -699,7 +733,7 @@ def perform_delete(ledger, host, job):
             if not backup or backup['state'] == 'failed':
                 backup_id = str(uuid.uuid4()); now = time.time()
                 with ledger.db() as db:
-                    db.execute("INSERT INTO site_backups VALUES (?,?,'final','queued','','','',?,?)", (backup_id, row['id'], now, now))
+                    db.execute("INSERT INTO site_backups (id, site_id, kind, state, step, error, manifest, created, updated) VALUES (?,?,'final','queued','','','',?,?)", (backup_id, row['id'], now, now))
                     db.execute('UPDATE site_deletes SET backup_id=? WHERE id=?', (backup_id, job['id']))
                 backup = {'id': backup_id, 'site_id': row['id'], 'kind': 'final'}
             manifest = perform(ledger, host, backup)
@@ -932,7 +966,7 @@ def import_backup(ledger, host, site_id, token, mode, names):
             (UPLOADS / (token + suffix)).unlink(missing_ok=True)
     now = time.time()
     with ledger.db() as db:
-        db.execute("INSERT INTO site_backups VALUES (?,?,'imported','succeeded','imported','',?,?,?)", (ident, row['id'], json.dumps(manifest, sort_keys=True), now, now))
+        db.execute("INSERT INTO site_backups (id, site_id, kind, state, step, error, manifest, created, updated) VALUES (?,?,'imported','succeeded','imported','',?,?,?)", (ident, row['id'], json.dumps(manifest, sort_keys=True), now, now))
     return next(j for j in ledger.site_backups(row['id']) if j['id'] == ident)
 
 

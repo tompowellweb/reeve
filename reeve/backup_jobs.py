@@ -37,7 +37,7 @@ class BackupLedger:
             if not supported(row):
                 raise ValueError('Complete site backups cover managed sites and Compose packages only.')
             now = time.time()
-            db.execute("INSERT INTO site_backups VALUES (?,?,?,'queued','','','',?,?)", (ident, site_id, kind, now, now))
+            db.execute("INSERT INTO site_backups (id, site_id, kind, state, step, error, manifest, created, updated) VALUES (?,?,?,'queued','','','',?,?)", (ident, site_id, kind, now, now))
         return next(j for j in self.site_backups(site_id) if j['id'] == ident)
 
     def site_backups(self, site_id=None, active=False, limit=50):

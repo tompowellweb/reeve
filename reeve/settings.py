@@ -38,7 +38,8 @@ def read(loaded=None):
         'certificates': {'mode': tls['mode'], 'email': tls['email'], 'modes': ['internal', 'public']},
         'mail': {k: mail_values[k] for k in ('mode', 'relayhost', 'hostname', 'public_ip', 'rate_per_hour')} | {'modes': ['off', 'direct', 'relay', 'sink']},
         'profile': {'name': profile.name(loaded), 'profiles': {k: v['label'] for k, v in profile.PROFILES.items()}},
-        'backups': {'local_path': str(backup_root(loaded)), 'hour': site_backup.policy(loaded)['hour'], 'database_days': keep['database_days'], **keep['site']},
+        'backups': {'local_path': str(backup_root(loaded)), 'hour': site_backup.policy(loaded)['hour'], 'database_days': keep['database_days'],
+                    **{scope + '_' + tier: keep[scope][tier] for scope in ('local', 'remote') for tier in keep[scope]}},
         'updates': dict(php_updates.policy(loaded)),
     }
 
@@ -65,8 +66,9 @@ def merge(loaded, group, values):
     elif group == 'backups':
         new['backups'] = {**(new.get('backups') or {}), 'local_path': str(values.get('local_path', '/srv/backups')).strip()}
         new['site_backups'] = {**(new.get('site_backups') or {}), 'hour': number('hour', values.get('hour', 3))}
+        from .retention import TIERS, DEFAULT as RETENTION
         new['retention'] = {'database_days': number('database_days', values.get('database_days', 2)),
-                            'site': {key: number(key, values.get(key, 0)) for key in ('within_days', 'daily_days', 'weekly_days', 'monthly_days')}}
+                            **{scope: {tier: number(scope + '_' + tier, values.get(scope + '_' + tier, RETENTION[scope][tier])) for tier in TIERS} for scope in ('local', 'remote')}}
     elif group == 'updates':
         new['updates'] = {'hour': number('hour', values.get('hour', 4)), 'every_days': number('every_days', values.get('every_days', 7))}
     read(new)   # every reader validates the document as it would be; a ValueError here changes nothing
@@ -111,10 +113,33 @@ def apply(host, ledger, group, before, after):
     return note
 
 
+def surplus(ledger, values):
+    """What a candidate backups policy would remove of the existing backups: the complete backups here and the
+    repository copies, with counts and bytes, so the operator confirms before anything goes."""
+    from . import retention, site_backup, remote_backup
+    rule = retention.policy(merge(document(), 'backups', values))
+    local = site_backup.local_surplus(ledger, rule['local'])
+    try: config = remote_backup.settings()
+    except remote_backup.RemoteFailed: config = None
+    remote = remote_backup.remote_surplus(ledger, config, rule['remote']) if config else []
+    return {'local': {'count': len(local), 'bytes': sum(j['bytes'] for j in local), 'ids': [j['id'] for j in local]},
+            'remote': {'count': len(remote), 'bytes': sum(j['bytes'] for j in remote), 'ids': [j['id'] for j in remote]}}
+
+
 def save(host, ledger, group, values):
     before = document()
-    after = write(group, values)
-    return {'group': group, 'saved': read(after)[group], 'note': apply(host, ledger, group, before, after)}
+    kept = 0
+    if group == 'backups' and values.get('existing') == 'keep':
+        # The operator wants the new counts from now on but the backups already here to stay: mark them kept
+        # before the policy that would remove them is written. Manage on Recover lets them go later.
+        from .site_backup import mark_kept
+        found = surplus(ledger, values)
+        idents = sorted(set(found['local']['ids']) | set(found['remote']['ids']))
+        mark_kept(ledger, idents); kept = len(idents)
+    after = write(group, {k: v for k, v in values.items() if k != 'existing'})
+    note = apply(host, ledger, group, before, after)
+    if kept: note = str(kept) + ' existing backup' + ('' if kept == 1 else 's') + ' marked kept; the new counts apply to the rest. ' + note
+    return {'group': group, 'saved': read(after)[group], 'note': note}
 
 
 def restore(host, ledger, recorded):

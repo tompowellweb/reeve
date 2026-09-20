@@ -10,7 +10,7 @@ def test_read_reports_every_group_with_defaults_and_choices():
     assert groups['certificates'] == {'mode': 'internal', 'email': '', 'modes': ['internal', 'public']}
     assert groups['mail']['mode'] == 'direct' and groups['mail']['rate_per_hour'] == 100 and groups['mail']['modes'] == ['off', 'direct', 'relay', 'sink']
     assert groups['profile']['name'] == 'standard' and set(groups['profile']['profiles']) == {'small', 'standard', 'large'}
-    assert groups['backups'] == {'local_path': '/srv/backups', 'hour': 3, 'database_days': 2, 'within_days': 2, 'daily_days': 7, 'weekly_days': 31, 'monthly_days': 365}
+    assert groups['backups'] == {'local_path': '/srv/backups', 'hour': 3, 'database_days': 2, 'local_daily': 2, 'local_weekly': 0, 'local_monthly': 0, 'remote_daily': 7, 'remote_weekly': 4, 'remote_monthly': 12}
     assert groups['updates'] == {'hour': 4, 'every_days': 7}
 
 
@@ -26,9 +26,11 @@ def test_merge_applies_one_group_keeps_the_rest_and_refuses_what_the_readers_ref
     with pytest.raises(ValueError, match='whole number'): st.merge(loaded, 'mail', {'mode': 'direct', 'rate_per_hour': 'lots'})
     with pytest.raises(ValueError, match='relayhost'): st.merge(loaded, 'mail', {'mode': 'relay', 'relayhost': 'bad host!', 'rate_per_hour': '1'})
     with pytest.raises(ValueError, match='profile'): st.merge(loaded, 'profile', {'name': 'huge'})
-    new = st.merge(loaded, 'backups', {'local_path': '/data/backups', 'hour': '2', 'database_days': '3', 'within_days': '1', 'daily_days': '14', 'weekly_days': '0', 'monthly_days': '0'})
-    assert new['backups'] == {'local_path': '/data/backups'} and new['site_backups'] == {'hour': 2} and new['retention'] == {'database_days': 3, 'site': {'within_days': 1, 'daily_days': 14, 'weekly_days': 0, 'monthly_days': 0}}
-    with pytest.raises(ValueError, match='at least one day'): st.merge(loaded, 'backups', {'hour': '2', 'database_days': '0', 'within_days': '1', 'daily_days': '1', 'weekly_days': '1', 'monthly_days': '1'})
+    new = st.merge(loaded, 'backups', {'local_path': '/data/backups', 'hour': '2', 'database_days': '3', 'local_daily': '3', 'local_weekly': '12', 'local_monthly': '62', 'remote_daily': '14', 'remote_weekly': '0', 'remote_monthly': '0'})
+    assert new['backups'] == {'local_path': '/data/backups'} and new['site_backups'] == {'hour': 2}
+    assert new['retention'] == {'database_days': 3, 'local': {'daily': 3, 'weekly': 12, 'monthly': 62}, 'remote': {'daily': 14, 'weekly': 0, 'monthly': 0}}
+    with pytest.raises(ValueError, match='at least one day'): st.merge(loaded, 'backups', {'hour': '2', 'database_days': '0', 'local_daily': '1'})
+    with pytest.raises(ValueError, match='at least one daily backup here'): st.merge(loaded, 'backups', {'hour': '2', 'database_days': '2', 'local_daily': '0'})
     with pytest.raises(ValueError, match='updates.every_days'): st.merge(loaded, 'updates', {'hour': '4', 'every_days': '400'})
     with pytest.raises(ValueError, match='Unknown settings group'): st.merge(loaded, 'firewall', {})
 

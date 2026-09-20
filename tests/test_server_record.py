@@ -20,8 +20,8 @@ def test_the_record_carries_settings_sites_hostnames_and_latest_backups(tmp_path
     older, newer = ident(), ident()
     with ledger.db() as db:
         for b, at in ((older, 1000.0), (newer, 2000.0)):
-            db.execute("INSERT INTO site_backups VALUES (?,?,'scheduled','succeeded','done','',?,?,?)", (b, shop['id'], json.dumps({'coverage': 'complete', 'completed_at': at}), at, at))
-        db.execute("INSERT INTO site_backups VALUES (?,?,'manual','failed','x','boom','',3000,3000)", (ident(), shop['id']))
+            db.execute("INSERT INTO site_backups (id, site_id, kind, state, step, error, manifest, created, updated) VALUES (?,?,'scheduled','succeeded','done','',?,?,?)", (b, shop['id'], json.dumps({'coverage': 'complete', 'completed_at': at}), at, at))
+        db.execute("INSERT INTO site_backups (id, site_id, kind, state, step, error, manifest, created, updated) VALUES (?,?,'manual','failed','x','boom','',3000,3000)", (ident(), shop['id']))
     monkeypatch.setattr('reeve.settings.document', lambda: {'schema': 1, 'profile': 'small', 'tls': {'mode': 'public', 'email': 'a@b.example'}})
     monkeypatch.setattr('reeve.updates.installed', lambda: {'version': '1.3.0'})
     monkeypatch.setattr('reeve.site_backup.deleted_sites', lambda ledger: [{'name': 'old', 'domain': 'old.example', 'deleted_at': 5.0, 'runtime': 'static', 'final_backup': {'id': 'f', 'kind': 'final', 'completed_at': 4.0, 'bytes': 1, 'path': '/x'}}])

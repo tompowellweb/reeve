@@ -273,7 +273,8 @@ def test_managed_restore_creates_then_refills_a_new_site(managed, monkeypatch):
 def test_nightly_schedule_and_retention(managed, monkeypatch):
     ledger, host, row = managed
     monkeypatch.setattr(sb, 'policy', lambda: {'hour': 3})
-    monkeypatch.setattr('reeve.retention.policy', lambda: {'database_days': 2, 'site': {'within_days': 0, 'daily_days': 0, 'weekly_days': 0, 'monthly_days': 60}})
+    monkeypatch.setattr('reeve.retention.policy', lambda document=None: {'database_days': 2, 'local': {'daily': 1, 'weekly': 0, 'monthly': 0}, 'remote': {'daily': 1, 'weekly': 0, 'monthly': 0}})
+    monkeypatch.setattr('reeve.remote_backup.settings', lambda **k: None)
     import datetime
     noon = datetime.datetime(2026, 9, 16, 12, 0).timestamp()
     sb.tick(ledger, now=noon)
@@ -288,10 +289,10 @@ def test_nightly_schedule_and_retention(managed, monkeypatch):
     for _ in range(3):
         sb.perform(ledger, host, ledger.submit_site_backup(str(uuid.uuid4()), row['id']))
     with ledger.db() as db:
-        db.execute("INSERT INTO site_backups VALUES (?,?,'final','succeeded','','',?,?,?)", (str(uuid.uuid4()), row['id'], json.dumps({'files': {'bytes': 1}, 'dumps': {}, 'volumes': {}, 'completed_at': 1.0}), 0, 0))
+        db.execute("INSERT INTO site_backups (id, site_id, kind, state, step, error, manifest, created, updated) VALUES (?,?,'final','succeeded','','',?,?,?)", (str(uuid.uuid4()), row['id'], json.dumps({'files': {'bytes': 1}, 'dumps': {}, 'volumes': {}, 'completed_at': 1.0}), 0, 0))
     sb.prune(ledger, now=noon + 86400 * 30)
     states = [(j['kind'], j['state']) for j in ledger.site_backups(row['id'])]
-    # All four same-day backups fall in one daily, weekly and monthly bucket: one survivor, the final is untouched.
+    # All four same-day backups fall in one daily bucket: one survivor, the final is untouched.
     assert states.count(('manual', 'succeeded')) + states.count(('scheduled', 'succeeded')) == 1
     assert ('final', 'succeeded') in states and sum(1 for k, s in states if s == 'pruned') == 3
     pruned = next(j for j in ledger.site_backups(row['id']) if j['state'] == 'pruned')

@@ -97,14 +97,19 @@ The default schedule is:
 | Backup | Frequency | Retention |
 | --- | --- | --- |
 | Database dump | Every 15 minutes | Two days |
-| Complete site backup | Nightly | All for two days, then daily to a week, weekly to a month, monthly to a year |
-| Copy to SFTP or S3 | Hourly | Same retention as local backups |
+| Complete site backup | Nightly | Here: the newest two dailies (about three times a site's size on disk) |
+| Copy to SFTP or S3 | Hourly | In the repository: the newest of the last 7 days, 4 weeks and 12 months |
 
 Complete backups contain site files, volumes, a fresh database dump and site settings.
 Enable pausing during backup when the application needs writes stopped for a consistent copy.
-Final backups from deleted sites and imported backups do not expire automatically; let them go
-on **Recover → Manage** when they are no longer wanted. The nightly
-hour, retention and the local folder (`/srv/backups` by default) are on **Settings**. A server
+Retention is by count, as restic phrases it: the newest backup of each of the last so many days,
+weeks and months that have one, with separate counts for the copies here and for the repository.
+Zero turns a tier off; one daily is the minimum, so the hourly copy always has something to take,
+and a copy here that the repository has not received yet is never removed. Tightening the counts
+asks first, saying how many backups and how much space would go, and lets you keep the existing
+ones instead; those are then marked kept. Final backups from deleted sites, imported backups and
+kept backups do not expire; let them go on **Recover → Manage** when they are no longer wanted.
+The nightly hour, the counts and the local folder (`/srv/backups` by default) are on **Settings**. A server
 record, the settings and every site's hostnames and latest backup, is copied to the repository
 beside the backups, so a replacement server can find what was hosted.
 
