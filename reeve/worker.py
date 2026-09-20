@@ -64,7 +64,7 @@ def dispatch(message, ledger, host):
               "site-restores": {"op", "site_id"}, "retry-site-restore": {"op", "id"},
               "site-backup-list": {"op", "site_id"}, "site-backup-export": {"op", "snapshot"},
               "site-backup-import": {"op", "site_id", "token", "mode", "names"},
-              "site-restore-into": {"op", "site_id", "snapshot", "scope"}, "deleted-sites": {"op"},
+              "site-restore-into": {"op", "site_id", "snapshot", "scope"}, "deleted-sites": {"op"}, "site-refresh": {"op", "site_id"},
               "site-backup-options": {"op", "site_id", "quiesce"}}
     if op not in fields or set(message) != fields[op]:
         raise ValueError("Unsupported operation or fields")
@@ -115,6 +115,13 @@ def dispatch(message, ledger, host):
     if op == 'site-backup-options':
         from .site_backup import set_options
         return set_options(ledger, ledger.get(message['site_id']), message['quiesce'])
+    if op == 'site-refresh':
+        from .host import refresh_definitions
+        row = ledger.get(message['site_id'])
+        if json.loads(row['payload']).get('runtime') == 'compose':
+            # Mode two: the operator's own Compose file is what runs, so there is nothing of ours to write.
+            return {'site': row['name'], 'refreshed': [], 'skipped': 'a Compose application keeps the definitions it was given'}
+        return {'site': row['name'], 'refreshed': refresh_definitions(row)}
     if op == 'deleted-sites':
         from .site_backup import deleted_sites
         return deleted_sites(ledger)

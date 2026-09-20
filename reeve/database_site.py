@@ -13,6 +13,11 @@ from .database_versions import architecture, resolve, select, series
 STATE = OPS / 'panel/worker/databases'
 
 
+# The engine's own test, at the pace WEB_HEALTHCHECK in host.py explains; a database is given longer to
+# come up before its checks start counting against it.
+DB_HEALTH_TIMING = {'interval': '30s', 'timeout': '5s', 'retries': 5, 'start_period': '90s', 'start_interval': '2s'}
+
+
 def paths(row):
     return SITES / row['name'] / 'database', STATE / (row['id'] + '.json')
 
@@ -215,7 +220,7 @@ fi
                'security_opt': ['no-new-privileges:true'], 'environment': env, 'volumes': mounts,
                'networks': {'backend': {'aliases': ['db']}}, **container_limits(spec),
                'logging': {'driver': 'local', 'options': {'max-size': '10m', 'max-file': '3'}},
-               'healthcheck': {'test': ['CMD-SHELL', health], 'interval': '3s', 'timeout': '3s', 'retries': 40, 'start_period': '60s'}}
+               'healthcheck': {'test': ['CMD-SHELL', health], **DB_HEALTH_TIMING}}
     # Explicit socket path avoids image-specific /run permissions without extra retained volumes.
     service['command'] = server_options(engine, plugin, spec.get('usage'))
     compose = {'name': 'hosting-db-' + row['name'], 'services': {'database': service},

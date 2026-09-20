@@ -1,4 +1,5 @@
 """Root-only hosting implementation. Inputs come only from the validated ledger."""
+import copy
 import json
 import os
 import pwd
@@ -378,8 +379,7 @@ class Host:
                 "volumes": [f"{root}/html:/site:ro", f"{conf}/nginx.conf:/etc/nginx/nginx.conf:ro",
                             f"{conf}/site.nginx.conf:/etc/hosting/site.nginx.conf:ro"],
                 "networks": {"ingress": {"aliases": ["web-" + name]}},
-                "healthcheck": {"test": ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/__hosting_health"],
-                                "interval": "2s", "timeout": "2s", "retries": 10}}},
+                "healthcheck": copy.deepcopy(WEB_HEALTHCHECK)}},
             "networks": {"ingress": {"external": True, "name": network}}}
         if is_php:
             from .php_site import compose_services
@@ -578,6 +578,52 @@ def trust_bundle():
         tmp = bundle.with_name(".ca-bundle.new")
         tmp.write_text(text); tmp.chmod(0o600); tmp.replace(bundle)
     return str(bundle)
+
+
+
+# A container's health check is an exec: a process started inside it, which dockerd and containerd both
+# pay for. Every two seconds, across every container on the server, that is the largest thing an idle
+# machine does. These check at Docker's own pace, and `start_interval` keeps the first half minute as
+# quick as it was, so creating a site still reports healthy the moment it is.
+WEB_HEALTHCHECK = {"test": ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/__hosting_health"],
+                   "interval": "30s", "timeout": "5s", "retries": 3, "start_period": "30s", "start_interval": "1s"}
+
+
+def refresh_definitions(row):
+    """Write this release's container definitions into a site that was created by an earlier one, and
+    apply them. Only the health checks differ today. Compose recreates a container whose definition
+    changed, so a site is briefly restarted; a site already up to date is left alone and says so."""
+    from .php_site import PHP_HEALTHCHECK
+    from .database_site import DB_HEALTH_TIMING, paths as database_paths
+    changed = []
+    site_file = SITES / row["name"] / "compose.yml"
+    if site_file.is_file():
+        trusted(site_file)
+        compose = yaml.safe_load(site_file.read_text())
+        touched = False
+        for key, wanted in (("web", WEB_HEALTHCHECK), ("php", PHP_HEALTHCHECK)):
+            service = (compose.get("services") or {}).get(key)
+            if service is not None and service.get("healthcheck") != wanted:
+                service["healthcheck"] = copy.deepcopy(wanted); touched = True
+        if touched:
+            atomic(site_file, yaml.safe_dump(compose))
+            command(["docker", "compose", "-f", str(site_file), "up", "-d", "--wait", "--wait-timeout", "120"], timeout=180)
+            changed.append("site")
+    database_root, _ = database_paths(row)
+    database_file = database_root / "compose.yml"
+    if database_file.is_file():
+        trusted(database_file)
+        compose = yaml.safe_load(database_file.read_text())
+        service = (compose.get("services") or {}).get("database")
+        if service is not None:
+            current = service.get("healthcheck") or {}
+            wanted = {**current, **DB_HEALTH_TIMING}     # the test itself is the engine's, and stays
+            if wanted != current:
+                service["healthcheck"] = wanted
+                atomic(database_file, yaml.safe_dump(compose))
+                command(["docker", "compose", "-f", str(database_file), "up", "-d", "--wait", "--wait-timeout", "240"], timeout=300)
+                changed.append("database")
+    return changed
 
 
 def render_routes(routes, tls=None):

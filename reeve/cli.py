@@ -47,6 +47,7 @@ def add_site(sub):
     restore = site.add_parser('restore', help='restore a backup as a new site')
     restore.add_argument('backup'); restore.add_argument('--name', required=True); restore.add_argument('--domain', required=True)
     site.add_parser('restores', help="the site's restores").add_argument('name')
+    refresh_site = site.add_parser('refresh', help="bring a site's containers up to this release's definitions"); refresh_site.add_argument('name', nargs='?'); refresh_site.add_argument('--all', action='store_true', help='every managed site')
     quiesce = site.add_parser('quiesce', help='pause the site while backing up, or not'); quiesce.add_argument('name'); quiesce.add_argument('setting', choices=('on', 'off'))
 
 
@@ -131,7 +132,7 @@ def main():
             if args.php_version: data['php_version'] = args.php_version
             if args.database: data['database'] = {'engine': args.database, 'series': args.database_series, 'exact': args.database_exact, **({'usage': args.database_usage} if args.database_usage else {})}
             return out(rpc({'op': 'create', 'id': str(uuid.uuid4()), 'data': data}))
-        row = site_row(args.name) if verb != 'restore' else None
+        row = site_row(args.name) if verb not in ('restore', 'refresh') else None
         if verb == 'retry': return out(retry(row))
         if verb == 'domains': return out(rpc({'op': 'domains', 'id': str(uuid.uuid4()), 'site_id': row['id'], 'domains': args.domains}))
         if verb == 'delete': return out(rpc({'op': 'site-delete', 'site_id': row['id'], 'id': str(uuid.uuid4())}))
@@ -140,6 +141,9 @@ def main():
         if verb == 'restores': return out(rpc({'op': 'site-restores', 'site_id': row['id']}))
         if verb == 'quiesce': return out(rpc({'op': 'site-backup-options', 'site_id': row['id'], 'quiesce': args.setting == 'on'}))
         if verb == 'restore': return out(rpc({'op': 'site-restore', 'snapshot': args.backup, 'name': args.name, 'domain': args.domain}))
+        if verb == 'refresh':
+            chosen = [r for r in rpc({'op': 'list'}) if r['state'] == 'succeeded'] if args.all else [site_row(args.name)]
+            return out([rpc({'op': 'site-refresh', 'site_id': r['id']}) for r in chosen])
     if noun == 'backup':
         if verb == 'status': return out(rpc({'op': 'backup-destination'}))
         if verb == 'copy': return out(rpc({'op': 'backup-remote', 'id': ''}))

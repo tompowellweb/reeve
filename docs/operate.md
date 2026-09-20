@@ -61,6 +61,20 @@ sudo reeve php switch shop 8.3
 sudo reeve php rollback shop
 ```
 
+A site keeps the container settings it was created with, so a site made by an older release does
+not pick up changes a newer one makes to them. **Refresh** writes the current settings and applies
+them, which restarts that site's containers for a moment:
+
+```sh
+sudo reeve site refresh shop
+sudo reeve site refresh --all
+```
+
+A site already current is left alone and says so, and a Compose application is skipped: its own
+Compose file is what runs. Worth doing once after an update that says it changed how containers
+are run; 1.7.0 is such an update, and on a server with many sites it is the difference between an
+idle machine spending a quarter of a processor and a twentieth of one.
+
 A managed site can have one MariaDB, MySQL or PostgreSQL server. **Credentials** shows its
 application login; PHP receives the connection settings as `DATABASE_*` variables.
 Changing database usage restarts that database briefly. PHP 7.0 and 7.1 sites using MySQL

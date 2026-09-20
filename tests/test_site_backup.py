@@ -498,3 +498,32 @@ def test_static_template_carries_site_rules_and_restore_recreates_web(tmp_path, 
     sb.refresh_web(row, site)
     assert calls[0][:3] == ['docker', 'compose', '-f'] and '--force-recreate' in calls[0] and calls[0][-1] == 'web'
     assert calls[1] == ['docker', 'update', '--pids-limit', '-1', 'hosting-site-pages']
+
+
+def test_refresh_writes_this_releases_health_checks_into_an_older_site(tmp_path, monkeypatch):
+    """A site created by an earlier release keeps the definitions it was made with. Refresh writes the
+    current ones and applies them; a site already current is left alone and its containers untouched."""
+    import yaml
+    from reeve import host as hm, php_site, database_site
+    root = tmp_path / 'sites' / 'shop'; (root / 'database').mkdir(parents=True)
+    monkeypatch.setattr(hm, 'SITES', tmp_path / 'sites'); monkeypatch.setattr(database_site, 'SITES', tmp_path / 'sites')
+    monkeypatch.setattr(hm, 'trusted', lambda *a, **k: None); monkeypatch.setattr(database_site, 'trusted', lambda *a, **k: None)
+    ran = []
+    monkeypatch.setattr(hm, 'command', lambda args, timeout=120: ran.append([str(a) for a in args]))
+    old = {'test': ['CMD', 'wget'], 'interval': '2s', 'timeout': '2s', 'retries': 10}
+    (root / 'compose.yml').write_text(yaml.safe_dump({'name': 'hosting-site-shop', 'services': {
+        'web': {'image': 'nginx', 'healthcheck': dict(old)}, 'php': {'image': 'php', 'healthcheck': dict(old)}}}))
+    (root / 'database' / 'compose.yml').write_text(yaml.safe_dump({'name': 'hosting-db-shop', 'services': {
+        'database': {'image': 'mariadb', 'healthcheck': {'test': ['CMD-SHELL', 'mariadb-admin ping'], 'interval': '3s', 'timeout': '3s', 'retries': 40, 'start_period': '60s'}}}}))
+    row = {'id': 'x', 'name': 'shop'}
+    assert hm.refresh_definitions(row) == ['site', 'database']
+    site = yaml.safe_load((root / 'compose.yml').read_text())['services']
+    assert site['web']['healthcheck'] == hm.WEB_HEALTHCHECK and site['php']['healthcheck'] == php_site.PHP_HEALTHCHECK
+    assert site['web']['healthcheck']['interval'] == '30s' and site['web']['healthcheck']['start_interval'] == '1s'
+    database = yaml.safe_load((root / 'database' / 'compose.yml').read_text())['services']['database']['healthcheck']
+    assert database['test'] == ['CMD-SHELL', 'mariadb-admin ping']   # the engine's own test is kept
+    assert {k: database[k] for k in database_site.DB_HEALTH_TIMING} == database_site.DB_HEALTH_TIMING
+    assert [a[:3] for a in ran] == [['docker', 'compose', '-f'], ['docker', 'compose', '-f']] and all('up' in a for a in ran)
+    # Run again: nothing to write, so no container is recreated.
+    ran.clear()
+    assert hm.refresh_definitions(row) == [] and ran == []

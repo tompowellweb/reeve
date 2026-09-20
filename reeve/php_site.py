@@ -1,4 +1,5 @@
 """Managed PHP template additions, preserving site-owned configuration on retry."""
+import copy
 import json
 from pathlib import Path
 
@@ -91,6 +92,11 @@ ping.response=healthy
     return site_image
 
 
+# See WEB_HEALTHCHECK in host.py for why a running container is checked at this pace.
+PHP_HEALTHCHECK = {"test": ["CMD-SHELL", "SCRIPT_NAME=/__hosting_fpm_ping SCRIPT_FILENAME=/__hosting_fpm_ping REQUEST_METHOD=GET cgi-fcgi -bind -connect 127.0.0.1:9000 | grep -q healthy"],
+                   "interval": "30s", "timeout": "5s", "retries": 3, "start_period": "30s", "start_interval": "1s"}
+
+
 def compose_services(compose, root, data, row, site_image, backend):
     web = compose["services"]["web"]
     if data.get("memory_mb") is not None:
@@ -107,8 +113,7 @@ def compose_services(compose, root, data, row, site_image, backend):
             f"{root}/conf/php.ini:/etc/php/{data['php_version']}/cli/conf.d/99-hosting.ini:ro",
             *([shim] if (shim := __import__('reeve.mail', fromlist=['shim_mount']).shim_mount()) else [])],
         "networks": {"backend": {"aliases": ["php"]}},
-        "healthcheck": {"test": ["CMD-SHELL", "SCRIPT_NAME=/__hosting_fpm_ping SCRIPT_FILENAME=/__hosting_fpm_ping REQUEST_METHOD=GET cgi-fcgi -bind -connect 127.0.0.1:9000 | grep -q healthy"],
-                        "interval": "2s", "timeout": "2s", "retries": 10}})
+        "healthcheck": copy.deepcopy(PHP_HEALTHCHECK)})
     if data.get("memory_mb") is not None:
         php["mem_limit"] = f"{data['memory_mb'] - 32}m"
     if data.get("cpus") is not None:
