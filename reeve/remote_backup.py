@@ -62,7 +62,7 @@ def private(path):
 TYPES = ('sftp', 's3', 'local')
 NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9 _.-]{0,39}')
 LOCAL_PATH = re.compile(r'/[A-Za-z0-9_][A-Za-z0-9_./-]*')
-FORBIDDEN_LOCAL = ('/srv/sites', '/srv/docker', '/srv/backups/staging', '/srv/ops', '/etc', '/usr', '/var/lib', '/proc', '/sys', '/dev', '/boot', '/root', '/home')
+LOCAL_ROOTS = ('/srv/backups/repositories', '/mnt', '/media')   # where the worker and the hourly copy may write; the units say the same
 
 
 def validate_config(value, require_id=True):
@@ -89,10 +89,9 @@ def validate_config(value, require_id=True):
         if not {'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'} <= credentials.keys(): raise ValueError()
         if any(not isinstance(v, str) or not v or '\x00' in v for v in credentials.values()): raise ValueError()
     else:
-        # A folder this server can reach: a repository on a disk here or on a mounted share. Never inside the
-        # data the panel manages, and never a system folder.
-        if not LOCAL_PATH.fullmatch(repository) or '/../' in repository + '/' or repository.rstrip('/') in ('/', '/srv', '/srv/backups'): raise ValueError()
-        if any(repository == root or repository.startswith(root + '/') for root in FORBIDDEN_LOCAL): raise ValueError()
+        # A folder this server can reach: a repository on a disk here or on a mounted share, under one of the
+        # roots the service units let the worker and the hourly copy write, and never a root itself.
+        if not LOCAL_PATH.fullmatch(repository) or '/../' in repository + '/' or not local_allowed(repository): raise ValueError()
     private(value['password_file'])
     if require_id and not HEX.fullmatch(value.get('repository_id', '')): raise ValueError()
     if 'name' in value and (not isinstance(value['name'], str) or not NAME.fullmatch(value['name'])): raise ValueError()
@@ -103,6 +102,10 @@ def validate_config(value, require_id=True):
     value['destination'] = hashlib.sha256((repository + '\n' + value.get('repository_id', '')).encode()).hexdigest()
     value.setdefault('name', default_name(value))
     return value
+
+
+def local_allowed(path):
+    return any(path.startswith(root + '/') and len(path) > len(root) + 1 for root in LOCAL_ROOTS)
 
 
 def default_name(value):
@@ -419,8 +422,8 @@ def destination_status(ledger, config, site_id):
         site_receipt = db.execute('''SELECT r.job_id,r.snapshot,r.verified,s.created FROM remote_copies r
             JOIN site_backups s ON s.id=r.job_id WHERE r.destination=? AND (? IS NULL OR s.site_id=?) AND r.verified>0
             ORDER BY s.created DESC LIMIT 1''', (destination, site_id, site_id)).fetchone()
-    return {'id': config['id'], 'name': config['name'], 'type': config['type'], 'repository': config['repository'], 'enabled': config.get('enabled', True),
-            'state': 'configured' if config.get('enabled', True) else 'paused',
+    return {'id': config['id'], 'name': config['name'], 'type': config['type'], 'repository': config['repository'], 'repository_id': config.get('repository_id', ''),
+            'enabled': config.get('enabled', True), 'state': 'configured' if config.get('enabled', True) else 'paused',
             'pending': len(pending(ledger, destination, site_id)), 'pending_sites': len(pending_sites(ledger, destination, site_id)),
             'cycle': dict(cycle) if cycle else None, 'last_copy': dict(receipt) if receipt else None, 'last_site_copy': dict(site_receipt) if site_receipt else None}
 

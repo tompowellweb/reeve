@@ -11,7 +11,7 @@ from reeve import destination as dest, remote_backup as remote
 def box(tmp_path, monkeypatch):
     secrets = tmp_path / 'secrets'; secrets.mkdir(mode=0o700); homes = tmp_path / 'destinations'; homes.mkdir(mode=0o700)
     monkeypatch.setattr(dest, 'SECRETS', secrets); monkeypatch.setattr(dest, 'DESTINATIONS', homes); monkeypatch.setattr(remote, 'DESTINATIONS', homes)
-    monkeypatch.setattr(remote, 'CONFIG', tmp_path / 'legacy.json')
+    monkeypatch.setattr(remote, 'CONFIG', tmp_path / 'legacy.json'); monkeypatch.setattr(remote, 'LOCAL_ROOTS', ('/srv/backups/repositories', str(tmp_path)))
     monkeypatch.setattr(dest, 'trusted', lambda *a, **k: None); monkeypatch.setattr('reeve.host.trusted', lambda *a, **k: None); monkeypatch.setattr(remote, 'trusted', lambda *a, **k: None)
     monkeypatch.setattr(remote, 'regular', lambda p: p.read_bytes()); monkeypatch.setattr(remote, 'private', lambda p: Path(p))
     (secrets / 'id_ed25519').write_text('PRIVATE\n'); (secrets / 'id_ed25519.pub').write_text('ssh-ed25519 PUB reeve uploader\n')

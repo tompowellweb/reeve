@@ -22,7 +22,7 @@ from pathlib import Path
 
 from .host import atomic, command, trusted
 from . import remote_backup as remote
-from .remote_backup import DESTINATIONS, RemoteFailed, execute, NAME, LOCAL_PATH
+from .remote_backup import DESTINATIONS, RemoteFailed, execute, NAME, LOCAL_PATH, LOCAL_ROOTS, local_allowed
 
 SECRETS = Path('/srv/ops/panel/worker/remote-secrets')   # the server's own uploader key, shared by every SFTP destination
 HOST = re.compile(r'[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?')
@@ -62,9 +62,10 @@ def validate(form):
         return {'type': 's3', 'name': name, 'bucket': field(form, 'bucket', BUCKET), 'region': field(form, 'region', REGION), 'prefix': field(form, 'prefix', PREFIX, required=False).strip('/'),
                 'access_key_id': field(form, 'access_key_id', re.compile(r'[A-Z0-9]{16,128}')), 'secret_access_key': field(form, 'secret_access_key', re.compile(r'[A-Za-z0-9/+=]{16,256}')), 'existing_password': existing}
     if kind == 'local':
-        path = field(form, 'path', LOCAL_PATH)
-        if '/../' in path + '/': raise ValueError('Path is not valid')
-        return {'type': 'local', 'name': name, 'path': path.rstrip('/') or '/', 'existing_password': existing}
+        path = field(form, 'path', LOCAL_PATH).rstrip('/')
+        if '/../' in path + '/' or not local_allowed(path):
+            raise ValueError('A folder repository goes under ' + ', '.join(LOCAL_ROOTS[:-1]) + ' or ' + LOCAL_ROOTS[-1] + ', the places this server\'s services may write; mount a disk or share there first')
+        return {'type': 'local', 'name': name, 'path': path, 'existing_password': existing}
     raise ValueError('Choose SFTP, Amazon S3 or a folder')
 
 
@@ -159,8 +160,13 @@ def _connect(data, ident, home):
         folder = Path(data['path'])
         if folder.exists() and not folder.is_dir(): raise ValueError('That path is not a folder')
         if not folder.exists():
-            if not folder.parent.is_dir(): raise ValueError('The folder\'s parent does not exist; mount or create it first')
-            folder.mkdir(mode=0o700)
+            try:
+                if folder.parent == Path(LOCAL_ROOTS[0]): folder.parent.mkdir(mode=0o700, exist_ok=True)   # the on-disk root is ours to make
+                if not folder.parent.is_dir(): raise ValueError('The folder\'s parent does not exist; mount the disk or share there first')
+                folder.mkdir(mode=0o700)
+            except OSError as exc:
+                raise ValueError('This server cannot write there (' + (exc.strerror or str(exc)) + '); a folder repository goes under '
+                                 + ', '.join(LOCAL_ROOTS[:-1]) + ' or ' + LOCAL_ROOTS[-1]) from None
     atomic(home / 'config.json', json.dumps(config, indent=2), 0o600)
     checked = remote.load(home / 'config.json', require_id=False)
     try: repo = repository_id(checked)
