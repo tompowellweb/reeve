@@ -51,11 +51,11 @@ def add_site(sub):
 
 
 def add_others(sub):
-    backup = sub.add_parser('backup', help='the off-machine destination').add_subparsers(dest='verb', required=True)
-    backup.add_parser('status', help='destination, pending copies, last copy')
-    backup.add_parser('copy', help='copy waiting backups now')
-    backup.add_parser('card', help='print the recovery card (the whole way into the repository; keep it private)')
-    backup.add_parser('connect-card', help='connect from a recovery card file').add_argument('file')
+    backup = sub.add_parser('backup', help='the backup destinations').add_subparsers(dest='verb', required=True)
+    backup.add_parser('status', help='every destination, pending copies, last copies')
+    backup.add_parser('copy', help='copy waiting backups to every enabled destination now')
+    backup.add_parser('card', help='print the recovery card (the whole way into every repository; keep it private)')
+    backup.add_parser('connect-card', help='connect every destination a recovery card names').add_argument('file')
     schedule = backup.add_parser('schedule', help="a site's database dump interval"); schedule.add_argument('name'); schedule.add_argument('--interval', type=int, choices=(15, 60), default=15); schedule.add_argument('--paused', action='store_true')
     php = sub.add_parser('php', help='PHP branches and rebuilds').add_subparsers(dest='verb', required=True)
     php.add_parser('versions', help='the catalogue and built images'); php.add_parser('refresh', help='refresh the catalogue')
@@ -77,7 +77,7 @@ def add_others(sub):
     settings.add_parser('show', help='every group as the Settings page shows it')
     save = settings.add_parser('set', help='save one group: reeve settings set certificates mode=public email=you@example.com'); save.add_argument('group'); save.add_argument('values', nargs='+', help='key=value pairs')
     server = sub.add_parser('server', help='recover what was hosted: scan a repository or folder, restore sites').add_subparsers(dest='verb', required=True)
-    scan = server.add_parser('scan', help='look for backups in the connected repository, a folder or on this server'); scan.add_argument('--folder', help='a folder of backups on this server'); scan.add_argument('--local', action='store_true', help="this server's own copies only")
+    scan = server.add_parser('scan', help='look for backups in the first repository, a folder or on this server'); scan.add_argument('--folder', help='a folder of backups on this server'); scan.add_argument('--local', action='store_true', help="this server's own copies only")
     server.add_parser('found', help='what the last scan found')
     restore = server.add_parser('restore', help='restore sites from the last scan as new sites, newest backup, recorded hostnames'); restore.add_argument('names', nargs='*', help='site names as found; none means every site'); restore.add_argument('--settings', action='store_true', help='also apply the recorded server settings')
     server.add_parser('recoveries', help='the recovery queue')
@@ -142,7 +142,7 @@ def main():
         if verb == 'restore': return out(rpc({'op': 'site-restore', 'snapshot': args.backup, 'name': args.name, 'domain': args.domain}))
     if noun == 'backup':
         if verb == 'status': return out(rpc({'op': 'backup-destination'}))
-        if verb == 'copy': return out(rpc({'op': 'backup-remote'}))
+        if verb == 'copy': return out(rpc({'op': 'backup-remote', 'id': ''}))
         if verb == 'card': return out(rpc({'op': 'backup-card'}))
         if verb == 'connect-card': return out(rpc({'op': 'backup-connect-card', 'card': open(args.file).read()}))
         if verb == 'schedule': return out(rpc({'op': 'backup-schedule', 'site_id': site_row(args.name)['id'], 'interval': args.interval, 'enabled': not args.paused}))

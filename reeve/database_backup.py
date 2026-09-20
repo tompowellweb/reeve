@@ -321,18 +321,16 @@ def retention_tick(ledger, now=None):
     """Remove dumps outside the policy window. The newest dump per site always stays, and while a
     remote destination is configured a dump that has not been copied off-machine is never removed."""
     from .retention import policy as retention_policy, keep_dumps
-    from .remote_backup import settings, RemoteFailed
+    from .remote_backup import verified_everywhere
     now = time.time() if now is None else now
     days = retention_policy()['database_days']
-    try: config = settings()
-    except RemoteFailed: config = {'destination': 'invalid', 'enabled': True}
     with ledger.db() as db:
         rows = [dict(r) for r in db.execute("SELECT id, site_id, created, artifact FROM backup_jobs WHERE state='succeeded' AND cleanup_error=''")]
-        verified = {r[0] for r in db.execute('SELECT job_id FROM remote_copies WHERE destination=? AND verified>0', (config['destination'],))} if config else set()
+    verified = verified_everywhere(ledger)   # None: no destination enabled, nothing to wait for
     keep = keep_dumps(rows, now, days)
     for job in rows:
         if job['id'] in keep: continue
-        if config and job['id'] not in verified: continue
+        if verified is not None and job['id'] not in verified: continue
         root = artifact_path(job['id'])
         manifest = json.loads(job['artifact']) if job['artifact'] else {}
         with ledger.db() as db:

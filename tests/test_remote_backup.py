@@ -21,10 +21,12 @@ def setup(tmp_path, monkeypatch):
     monkeypatch.setattr(remote, 'trusted', lambda *a, **k: None)
     monkeypatch.setattr(local.ci, 'regular', lambda p: p.read_bytes())
     monkeypatch.setattr(remote, 'regular', lambda p: p.read_bytes())
-    config = {'destination': 'test', 'repository_id': 'a' * 64, 'enabled': True, 'prune_local_after_days': 0,
+    config = {'id': 'test-id', 'name': 'Test', 'destination': 'test', 'repository_id': 'a' * 64, 'enabled': True, 'prune_local_after_days': 0,
               'timeout_seconds': 10, 'type': 'sftp', 'repository': 'sftp://backup@example.com//repo',
               'password_file': '/private/password', 'ssh_key_file': '/private/key', 'known_hosts_file': '/private/known_hosts'}
     monkeypatch.setattr(remote, 'settings', lambda **k: config)
+    monkeypatch.setattr(remote, 'destinations', lambda **k: [config])
+    monkeypatch.setattr(remote, 'destination', lambda ident, **k: config)
     monkeypatch.setattr(remote, 'CACHE', tmp_path / 'cache')
     def artifact(age=0):
         job = ledger.submit_backup(str(uuid.uuid4()), row['id'])
@@ -181,27 +183,39 @@ def test_real_download_stream_is_bounded_and_hashed_without_sql_tempfile(monkeyp
 
 
 def test_configuration_rejects_commands_plain_http_secrets_in_urls_and_wrong_modes(tmp_path, monkeypatch):
-    monkeypatch.setattr(remote, 'CONFIG', tmp_path / 'config.json')
+    homes = tmp_path / 'destinations'; home = homes / '33333333-3333-3333-3333-333333333333'; home.mkdir(parents=True)
+    monkeypatch.setattr(remote, 'DESTINATIONS', homes); monkeypatch.setattr(remote, 'CONFIG', tmp_path / 'legacy.json'); monkeypatch.setattr(remote, 'CACHE', tmp_path / 'cache')
     monkeypatch.setattr(remote, 'trusted', lambda *a, **k: None)
     monkeypatch.setattr(remote, 'regular', lambda p: p.read_bytes())
     secret = tmp_path / 'secret'; secret.write_text('private'); secret.chmod(0o600)
     config = {'type': 'sftp', 'repository': 'sftp://backup@example.com:2222//repo', 'repository_id': 'a' * 64,
               'password_file': str(secret), 'ssh_key_file': str(secret), 'known_hosts_file': str(secret)}
-    def write(c): remote.CONFIG.write_text(json.dumps(c)); remote.CONFIG.chmod(0o600)
-    write(config); assert remote.settings()['type'] == 'sftp'
+    def write(c): (home / 'config.json').write_text(json.dumps(c)); (home / 'config.json').chmod(0o600)
+    write(config); assert remote.settings()['type'] == 'sftp' and remote.settings()['id'] == home.name and remote.settings()['name'] == 'example.com'
     for invalid in ({**config, 'repository': 'sftp://root:password@example.com//repo'}, {**config, 'command': 'anything'},
-                    {**config, 'repository_id': 'wrong'}, {**config, 'prune_local_after_days': 1}):
+                    {**config, 'repository_id': 'wrong'}, {**config, 'prune_local_after_days': 1}, {**config, 'name': 'x' * 41},
+                    {**config, 'type': 'local', 'repository': '/srv/sites/shop'}, {**config, 'type': 'local', 'repository': '/etc/reeve'}, {**config, 'type': 'local', 'repository': 'relative'}):
         write(invalid)
         with pytest.raises(remote.RemoteFailed): remote.settings()
+        assert remote.destinations() == [] and remote.destinations(include_invalid=True)[0]['invalid']
     write(config); secret.chmod(0o644)
     with pytest.raises(remote.RemoteFailed): remote.settings()
     secret.chmod(0o600)
     aws = tmp_path / 'aws'; aws.write_text(json.dumps({'AWS_ACCESS_KEY_ID': 'id', 'AWS_SECRET_ACCESS_KEY': 'secret'})); aws.chmod(0o600)
     s3 = {'type': 's3', 'repository': 's3:https://s3.eu-west-2.amazonaws.com/test-bucket/hosting',
           'repository_id': 'a' * 64, 'password_file': str(secret), 'aws_credentials_file': str(aws)}
-    write(s3); assert remote.settings()['type'] == 's3'
+    write(s3); assert remote.settings()['type'] == 's3' and remote.settings()['name'] == 'test-bucket'
     write({**s3, 'repository': s3['repository'].replace('https:', 'http:')})
     with pytest.raises(remote.RemoteFailed): remote.settings()
+    folder = {'type': 'local', 'name': 'Disk', 'repository': str(tmp_path / 'repo'), 'repository_id': 'b' * 64, 'password_file': str(secret)}
+    write(folder); found = remote.settings()
+    assert found['type'] == 'local' and found['name'] == 'Disk' and remote.command(found)[1]['RESTIC_REPOSITORY'] == str(tmp_path / 'repo')
+    # Two destinations: every enabled one is a copy target, the guard wants a receipt from each.
+    other = homes / '44444444-4444-4444-4444-444444444444'; other.mkdir()
+    (other / 'config.json').write_text(json.dumps({**s3, 'name': 'S3', 'enabled': False, 'created': 5})); (other / 'config.json').chmod(0o600)
+    assert [d['name'] for d in remote.destinations()] == ['Disk', 'S3'] and [d['name'] for d in remote.enabled_destinations()] == ['Disk']
+    assert remote.destination(other.name)['name'] == 'S3'
+    with pytest.raises(ValueError): remote.destination('not-an-id')
 
 
 def test_a_cycle_clears_stale_repository_locks_before_uploading(setup, monkeypatch):

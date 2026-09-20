@@ -428,12 +428,9 @@ def local_surplus(ledger, counts, now=None):
     kinds, not kept by the operator, and, while a destination is connected, already copied off-machine
     (a nightly backup pruned before the hourly copy ran would never reach the repository)."""
     from .retention import keep_site_backups
-    from .remote_backup import settings as remote_settings, RemoteFailed
+    from .remote_backup import verified_everywhere
     now = time.time() if now is None else now
-    try: config = remote_settings()
-    except RemoteFailed: config = {'destination': 'invalid', 'enabled': True}
-    with ledger.db() as db:
-        verified = {r[0] for r in db.execute('SELECT job_id FROM remote_copies WHERE destination=? AND verified>0', (config['destination'],))} if config else set()
+    verified = verified_everywhere(ledger)   # None: no destination enabled, nothing to wait for
     surplus = []
     for row in ledger.list():
         succeeded = [j for j in ledger.site_backups(row['id'], limit=None) if j['state'] == 'succeeded']
@@ -442,7 +439,7 @@ def local_surplus(ledger, counts, now=None):
         keep = keep_site_backups(entries, now, counts)
         for job in succeeded:
             if job['id'] in keep or job['kind'] not in PRUNABLE: continue
-            if config and job['id'] not in verified: continue
+            if verified is not None and job['id'] not in verified: continue
             surplus.append({**job, 'site_name': row['name'], 'bytes': backup_bytes(manifests[job['id']])})
     return sorted(surplus, key=lambda j: j['created'])
 

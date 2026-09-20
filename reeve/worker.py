@@ -41,7 +41,7 @@ def dispatch(message, ledger, host):
               "secure-token": {"op"}, "secure-close-unlock": {"op"},
               "recover-status": {"op"}, "recover-scan": {"op", "source", "folder"}, "recover-submit": {"op", "items"},
               "recover-retry": {"op", "id"}, "recover-settings": {"op"}, "recover-manage": {"op", "items"}, "settings-surplus": {"op", "values"},
-              "versions": {"op"}, "refresh-versions": {"op", "id"}, "php-rebuild": {"op", "id"}, "housekeeping": {"op"}, "sftp-key": {"op", "site_id"}, "backup-connect": {"op", "data"}, "backup-enabled": {"op", "enabled"}, "backup-disconnect": {"op"}, "backup-reveal": {"op"}, "backup-setup": {"op"}, "backup-server-key": {"op"}, "php-switch": {"op", "id", "site_id", "branch"},
+              "versions": {"op"}, "refresh-versions": {"op", "id"}, "php-rebuild": {"op", "id"}, "housekeeping": {"op"}, "sftp-key": {"op", "site_id"}, "backup-connect": {"op", "data"}, "backup-enabled": {"op", "enabled", "id"}, "backup-disconnect": {"op", "id", "remove_repository"}, "backup-reveal": {"op", "id"}, "backup-setup": {"op"}, "backup-server-key": {"op"}, "php-switch": {"op", "id", "site_id", "branch"},
               "php-rollback": {"op", "id", "site_id", "previous"}, "retry-runtime": {"op", "id"},
               "database-versions": {"op"}, "refresh-databases": {"op", "id"},
               "add-database": {"op", "id", "site_id", "data"}, "retry-database": {"op", "id"},
@@ -56,7 +56,7 @@ def dispatch(message, ledger, host):
               "backup-destination": {"op"}, "mail-status": {"op"}, "mail-flush": {"op"}, "mail-delete": {"op", "id"}, "mail-setup": {"op"},
               "backup-status": {"op", "site_id"}, "backup-database": {"op", "site_id", "id"},
               "backup-schedule": {"op", "site_id", "interval", "enabled"},
-              "backup-remote": {"op"},
+              "backup-remote": {"op", "id"},
               "site-backup": {"op", "id", "site_id"}, "site-backups": {"op", "site_id"},
               "site-restore": {"op", "snapshot", "name", "domain"},
               "site-delete": {"op", "id", "site_id"}, "site-deletes": {"op", "site_id"}, "retry-site-delete": {"op", "id"},
@@ -145,7 +145,7 @@ def dispatch(message, ledger, host):
         return read(row) if op == 'recovery-context' else save(ledger, row, message['data'])
     if op == 'backup-remote':
         from .remote_backup import request
-        request(ledger)
+        request(ledger, str(message['id']) if message.get('id') else None)
         return {'state': 'requested'}
     if op in ('backup-status', 'backup-database', 'backup-schedule'):
         from .backup_jobs import status
@@ -278,13 +278,13 @@ def dispatch(message, ledger, host):
         return connect(message['data'])
     if op == 'backup-enabled':
         from .destination import set_enabled
-        return set_enabled(bool(message['enabled']))
+        return set_enabled(str(message['id']), bool(message['enabled']))
     if op == 'backup-disconnect':
         from .destination import disconnect
-        return disconnect()
+        return disconnect(str(message['id']), bool(message.get('remove_repository')))
     if op == 'backup-reveal':
         from .destination import reveal
-        return reveal()
+        return reveal(str(message['id']))
     if op == 'backup-setup':
         from .destination import overview
         return overview()

@@ -6,13 +6,14 @@ in time you choose, as new sites or into live ones.
 
 ## Keep this outside the server
 
-The **recovery card**: on **Backups**, next to the repository password, **Show recovery card**
-gives one small text, shown on the page to copy or saved as a file, with the destination address, its pinned host keys, this server's
-credentials and the repository password. Keep it in a password manager. It is the whole way into
-the backups, so treat it as the backups themselves. `sudo reeve backup card` prints the same.
+The **recovery card**: on **Backups**, **Show recovery card** gives one small text, shown on the
+page to copy or saved as a file, with every destination's address, pinned host keys, this
+server's credentials and repository password. Keep it in a password manager. It is the whole way
+into the backups, so treat it as the backups themselves. `sudo reeve backup card` prints the same.
+Make a new card whenever a destination is added.
 
 Nothing else. A replacement server makes its own WireGuard tunnel; the old client
-configurations do not carry over. The repository holds a **server record** beside the site backups: the server's
+configurations do not carry over. Every repository holds a **server record** beside the site backups: the server's
 settings, its release, and every site with its hostnames and latest complete backup. It is
 written whenever something changes and copied with the backups.
 
@@ -20,11 +21,12 @@ written whenever something changes and copied with the backups.
 
 1. Install Reeve on a fresh Debian 13 server as in [Install](install.md); the release that
    made the backups or any newer one.
-2. On **Backups**, **Connect from the card**. The server connects with the recorded host keys
-   and credentials, to the very repository the card names, with uploads paused: two servers
-   must not write to one repository. Without a card, connect the destination by hand and choose
-   **existing repository password**.
-3. On **Recover**, scan the repository. It lists the sites found, each with its complete
+2. On **Backups**, **Connect from the card**. The server connects every destination the card
+   names with the recorded host keys and credentials, to the very repositories the card names,
+   with uploads paused: two servers must not write to one repository. A folder repository that
+   was on the old server's own disk is skipped, and said so. Without a card, connect each
+   destination by hand and choose **existing repository password**.
+3. On **Recover**, scan a repository (the source list names each destination). It lists the sites found, each with its complete
    backups and database dumps by time, and the server record. Apply the recorded settings,
    tick the sites, keep or change their names and hostnames, and press **Restore the selected
    sites**. Restores run one after another; the page shows each step.
@@ -44,7 +46,7 @@ to restore only those.
 
 ## Roll a live site back
 
-On **Recover**, scan the repository or this server's own copies and tick the site. **From** is
+On **Recover**, scan a repository or this server's own copies and tick the site. **From** is
 the point in time: a complete backup or a database dump. **Restore** depends on whether the
 site is live on this server:
 
@@ -65,14 +67,15 @@ server** and give its path. A `server-record.json` in that folder is read too.
 ## Manage backups
 
 **Recover → Manage** lists every backup the last scan found, by site: complete backups and
-database dumps, each with its time, size and where it is (here, the repository or the folder),
-and for a copy here whether it has been copied off-machine. Two actions:
+database dumps, each with its time, size and where it is (here, a named repository or the
+folder), and for a copy here which destinations hold it yet. Two actions:
 
 - **Download** prepares the files for six hours: `snapshot.tar` is the whole backup and can be
-  imported on any panel. A backup that is only in the repository or a folder is fetched here
+  imported on any panel. A backup that is only in a repository or a folder is fetched here
   first and then stays as a local copy.
-- **Delete** lets go of the one copy listed. Deleting a copy here leaves the repository's;
-  deleting a repository snapshot forgets it and prunes the repository, and leaves the copy here.
+- **Delete** lets go of the one copy listed. Deleting a copy here leaves every repository's;
+  deleting a repository snapshot forgets it and prunes that repository, and leaves the copy
+  here and the other repositories'.
   **Delete all** takes a site's every listed backup after you type its name. This is how a
   deleted site's final backup, which retention never touches, is let go once it is no longer
   wanted. A backup a recovery is using cannot be deleted until it finishes.

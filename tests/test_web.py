@@ -112,11 +112,13 @@ def test_database_dump_and_schedule_are_authenticated_and_show_scope(setup, monk
     assert client.post('/sites/dump/backup/database').status_code == 403
     assert client.post('/sites/dump/backup/remote').status_code == 403
     from reeve import remote_backup
-    monkeypatch.setattr(remote_backup, 'settings', lambda: {'destination': 'test', 'enabled': True, 'type': 's3', 'prune_local_after_days': 0})
+    s3 = {'id': str(uuid.UUID(int=77)), 'name': 'Rackback', 'destination': 'test', 'enabled': True, 'type': 's3', 'prune_local_after_days': 0, 'repository': 's3:https://s3.eu-west-2.amazonaws.com/rackback/hosting', 'repository_id': 'a' * 64}
+    monkeypatch.setattr(remote_backup, 'settings', lambda **k: s3); monkeypatch.setattr(remote_backup, 'destinations', lambda **k: [s3])
     page = client.get('/sites/dump')
     assert 'Destination settings' in page.text
     destination = client.get('/backups')
-    assert 'Copy waiting databases' in destination.text and '<h2>Local copies</h2><p><strong>/srv/backups</strong> · the default</p>' in destination.text and 'backups.local_path' in destination.text
+    assert 'Rackback' in destination.text and 'Copy now' in destination.text and 'name="id" value="' + s3['id'] + '"' in destination.text
+    assert '<code>rackback</code> in eu-west-2' in destination.text and '<h2>Local copies</h2><p><strong>/srv/backups</strong> · the default</p>' in destination.text and 'backups.local_path' in destination.text
     assert 'The folder does not exist' in destination.text  # not on this machine
     from reeve import host as hm
     (tmp_path / 'local-backups').mkdir(); (tmp_path / 'local-backups/dump.bin').write_bytes(b'x' * 4096)

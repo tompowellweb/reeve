@@ -88,9 +88,10 @@ before making other changes to the site.
 
 ![A site's backups page](images/site-backups.png)
 
-Connect an SFTP or Amazon S3 destination on the server's **Backups** page, then download the
-**recovery card** and keep it in a password manager: it holds the address, host keys,
-credentials and repository password a replacement server needs, in one file.
+Connect one or more destinations on the server's **Backups** page, SFTP, Amazon S3 or a folder,
+then show the **recovery card** and keep it in a password manager: it holds every destination's
+address, host keys, credentials and repository password, everything a replacement server needs,
+in one file.
 
 The default schedule is:
 
@@ -98,19 +99,27 @@ The default schedule is:
 | --- | --- | --- |
 | Database dump | Every 15 minutes | Two days |
 | Complete site backup | Nightly | Here: the newest two dailies (about three times a site's size on disk) |
-| Copy to SFTP or S3 | Hourly | In the repository: the newest of the last 7 days, 4 weeks and 12 months |
+| Copy to every destination | Hourly | In each repository: the newest of the last 7 days, 4 weeks and 12 months |
+
+**Destinations** on the Backups page are restic repositories, any number of them: an SFTP server
+(a NAS, another box), an Amazon S3 bucket, or a folder this server can reach, on a second disk
+here or on a mounted share. Give each a name. Every complete backup and dump is copied to each
+hourly and recorded only after being downloaded again and checked; each destination can be
+paused, copied to now, or disconnected on its own. A repository on this server's own disk keeps
+a deduplicated history cheaply and speeds restores, but dies with the server; a mounted share is
+an off-machine copy like any other. The recovery card carries every destination.
 
 Complete backups contain site files, volumes, a fresh database dump and site settings.
 Enable pausing during backup when the application needs writes stopped for a consistent copy.
 Retention is by count, as restic phrases it: the newest backup of each of the last so many days,
-weeks and months that have one, with separate counts for the copies here and for the repository.
+weeks and months that have one, with separate counts for the copies here and for the repositories.
 Zero turns a tier off; one daily is the minimum, so the hourly copy always has something to take,
-and a copy here that the repository has not received yet is never removed. Tightening the counts
+and a copy here that a destination has not received yet is never removed. Tightening the counts
 asks first, saying how many backups and how much space would go, and lets you keep the existing
 ones instead; those are then marked kept. Final backups from deleted sites, imported backups and
 kept backups do not expire; let them go on **Recover → Manage** when they are no longer wanted.
 The nightly hour, the counts and the local folder (`/srv/backups` by default) are on **Settings**. A server
-record, the settings and every site's hostnames and latest backup, is copied to the repository
+record, the settings and every site's hostnames and latest backup, is copied to every repository
 beside the backups, so a replacement server can find what was hosted.
 
 A site's **Backups** page offers download, import, restore to a new site, and restore of

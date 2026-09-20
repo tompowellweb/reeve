@@ -1,7 +1,11 @@
-"""Independent, bounded restic uploader for immutable completed database dumps.
+"""Independent, bounded restic uploader for completed backups, to every configured destination.
 
-Root-owned configuration only. No destination credentials or backend diagnostics reach RPC.
-The minute timer checks a durable hourly due time; the worker never waits on the network.
+A destination is a restic repository: on an SFTP server, in an Amazon S3 bucket, or in a folder this
+server can reach (a disk here, a mounted NAS). Each lives in its own root-private folder under
+DESTINATIONS with its configuration and credentials; receipts and cycles are keyed by the
+destination's identity (repository address and id). Root-owned configuration only. No destination
+credentials or backend diagnostics reach RPC. The minute timer checks each destination's durable
+hourly due time; the worker never waits on the network.
 """
 import argparse
 import fcntl
@@ -22,7 +26,8 @@ from . import site_backup as sites
 from .compose_inspect import regular
 from .host import trusted
 
-CONFIG = Path('/srv/ops/panel/worker/remote-backup.json')
+CONFIG = Path('/srv/ops/panel/worker/remote-backup.json')          # before 1.5.0: the one destination; migrated on first read
+DESTINATIONS = Path('/srv/ops/panel/worker/destinations')
 CACHE = Path('/srv/ops/panel/worker/restic-cache')
 LOCK = Path('/srv/ops/panel/worker/remote-backup.lock')
 HEX = re.compile(r'[0-9a-f]{64}')
@@ -54,41 +59,138 @@ def private(path):
     return path
 
 
-def settings(require_id=True):
-    if not CONFIG.exists(): return None
+TYPES = ('sftp', 's3', 'local')
+NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9 _.-]{0,39}')
+LOCAL_PATH = re.compile(r'/[A-Za-z0-9_][A-Za-z0-9_./-]*')
+FORBIDDEN_LOCAL = ('/srv/sites', '/srv/docker', '/srv/backups/staging', '/srv/ops', '/etc', '/usr', '/var/lib', '/proc', '/sys', '/dev', '/boot', '/root', '/home')
+
+
+def validate_config(value, require_id=True):
+    """The one reading of a destination's configuration: what the file may say, checked strictly."""
+    allowed = {'id', 'name', 'created', 'type', 'repository', 'repository_id', 'password_file', 'ssh_key_file', 'ssh_password_file', 'ssh_askpass_file',
+               'known_hosts_file', 'aws_credentials_file', 'enabled', 'timeout_seconds', 'prune_local_after_days'}
+    if not isinstance(value, dict) or value.keys() - allowed: raise ValueError()
+    if type(value.get('enabled', True)) is not bool: raise ValueError()
+    if value.get('type') not in TYPES: raise ValueError()
+    repository = value['repository']
+    if not isinstance(repository, str) or len(repository) > 2048 or any(c.isspace() for c in repository): raise ValueError()
+    if value['type'] == 'sftp':
+        # URL syntax supports an explicit port and an absolute remote path.
+        if not re.fullmatch(r'sftp://[A-Za-z0-9_.-]+@[A-Za-z0-9.-]+(?::[0-9]{1,5})?//[A-Za-z0-9_./-]+', repository): raise ValueError()
+        private(value['known_hosts_file'])
+        if 'ssh_key_file' in value: private(value['ssh_key_file'])
+        elif 'ssh_password_file' in value and 'ssh_askpass_file' in value: private(value['ssh_password_file']); private(value['ssh_askpass_file'])
+        else: raise ValueError()
+    elif value['type'] == 's3':
+        # Amazon endpoints only; TLS verification is always enabled.
+        if not re.fullmatch(r's3:https://s3[.-][a-z0-9-]+\.amazonaws\.com/[a-z0-9.-]+(?:/[A-Za-z0-9_./-]+)?', repository): raise ValueError()
+        credentials = json.loads(regular(private(value['aws_credentials_file'])))
+        if not isinstance(credentials, dict) or credentials.keys() - {'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'AWS_DEFAULT_REGION'}: raise ValueError()
+        if not {'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'} <= credentials.keys(): raise ValueError()
+        if any(not isinstance(v, str) or not v or '\x00' in v for v in credentials.values()): raise ValueError()
+    else:
+        # A folder this server can reach: a repository on a disk here or on a mounted share. Never inside the
+        # data the panel manages, and never a system folder.
+        if not LOCAL_PATH.fullmatch(repository) or '/../' in repository + '/' or repository.rstrip('/') in ('/', '/srv', '/srv/backups'): raise ValueError()
+        if any(repository == root or repository.startswith(root + '/') for root in FORBIDDEN_LOCAL): raise ValueError()
+    private(value['password_file'])
+    if require_id and not HEX.fullmatch(value.get('repository_id', '')): raise ValueError()
+    if 'name' in value and (not isinstance(value['name'], str) or not NAME.fullmatch(value['name'])): raise ValueError()
+    value.setdefault('timeout_seconds', 600)
+    value.setdefault('prune_local_after_days', 0)  # Superseded by the retention policy; accepted and ignored.
+    if type(value['timeout_seconds']) is not int or not 10 <= value['timeout_seconds'] <= 900: raise ValueError()
+    if type(value['prune_local_after_days']) is not int or value['prune_local_after_days'] not in (0, 7): raise ValueError()
+    value['destination'] = hashlib.sha256((repository + '\n' + value.get('repository_id', '')).encode()).hexdigest()
+    value.setdefault('name', default_name(value))
+    return value
+
+
+def default_name(value):
+    if value['type'] == 'sftp': return re.sub(r'^sftp://[^@]+@([^:/]+).*$', r'\1', value['repository'])[:40]
+    if value['type'] == 's3': return re.sub(r'^s3:https://[^/]+/([^/]+).*$', r'\1', value['repository'])[:40]
+    return value['repository'][:40]
+
+
+def load(path, require_id=True):
+    """A destination's configuration file, validated; the folder it lives in is the destination's home."""
+    path = Path(path)
     try:
-        value = json.loads(regular(private(CONFIG)))
-        allowed = {'type', 'repository', 'repository_id', 'password_file', 'ssh_key_file', 'ssh_password_file', 'ssh_askpass_file',
-                   'known_hosts_file', 'aws_credentials_file', 'enabled', 'timeout_seconds', 'prune_local_after_days'}
-        if not isinstance(value, dict) or value.keys() - allowed: raise ValueError()
-        if type(value.get('enabled', True)) is not bool: raise ValueError()
-        if value.get('type') not in ('sftp', 's3'): raise ValueError()
-        repository = value['repository']
-        if not isinstance(repository, str) or len(repository) > 2048 or any(c.isspace() for c in repository): raise ValueError()
-        if value['type'] == 'sftp':
-            # URL syntax supports an explicit port and an absolute remote path.
-            if not re.fullmatch(r'sftp://[A-Za-z0-9_.-]+@[A-Za-z0-9.-]+(?::[0-9]{1,5})?//[A-Za-z0-9_./-]+', repository): raise ValueError()
-            private(value['known_hosts_file'])
-            if 'ssh_key_file' in value: private(value['ssh_key_file'])
-            elif 'ssh_password_file' in value and 'ssh_askpass_file' in value: private(value['ssh_password_file']); private(value['ssh_askpass_file'])
-            else: raise ValueError()
-        else:
-            # Amazon endpoints only; TLS verification is always enabled.
-            if not re.fullmatch(r's3:https://s3[.-][a-z0-9-]+\.amazonaws\.com/[a-z0-9.-]+(?:/[A-Za-z0-9_./-]+)?', repository): raise ValueError()
-            credentials = json.loads(regular(private(value['aws_credentials_file'])))
-            if not isinstance(credentials, dict) or credentials.keys() - {'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'AWS_DEFAULT_REGION'}: raise ValueError()
-            if not {'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'} <= credentials.keys(): raise ValueError()
-            if any(not isinstance(v, str) or not v or '\x00' in v for v in credentials.values()): raise ValueError()
-        private(value['password_file'])
-        if require_id and not HEX.fullmatch(value.get('repository_id', '')): raise ValueError()
-        value.setdefault('timeout_seconds', 600)
-        value.setdefault('prune_local_after_days', 0)  # Superseded by the retention policy; accepted and ignored.
-        if type(value['timeout_seconds']) is not int or not 10 <= value['timeout_seconds'] <= 900: raise ValueError()
-        if type(value['prune_local_after_days']) is not int or value['prune_local_after_days'] not in (0, 7): raise ValueError()
-        value['destination'] = hashlib.sha256((repository + '\n' + value.get('repository_id', '')).encode()).hexdigest()
-        return value
+        value = json.loads(regular(private(path)))
+        value = validate_config(value, require_id)
     except Exception:
         raise RemoteFailed('Remote backup configuration is invalid; check the private setup file and credential permissions.') from None
+    value['path'] = str(path); value['dir'] = str(path.parent)
+    value.setdefault('id', path.parent.name)
+    return value
+
+
+def migrate():
+    """The single destination of releases before 1.5.0, moved into its own folder under DESTINATIONS. Root only;
+    a no-op once done or when there was none."""
+    if not CONFIG.exists(): return
+    import shutil, uuid
+    try: trusted(CONFIG); config = json.loads(CONFIG.read_text())
+    except (OSError, ValueError): return
+    ident = str(uuid.uuid4()); home = DESTINATIONS / ident
+    DESTINATIONS.mkdir(mode=0o700, parents=True, exist_ok=True); home.mkdir(mode=0o700)
+    for key in ('password_file', 'known_hosts_file', 'ssh_password_file', 'ssh_askpass_file', 'aws_credentials_file'):
+        if key in config and Path(config[key]).exists():
+            target = home / Path(config[key]).name
+            shutil.move(config[key], target); config[key] = str(target)
+    config.update(id=ident, created=time.time())
+    tmp = home / '.config.new'; tmp.write_text(json.dumps(config, indent=2)); tmp.chmod(0o600); tmp.replace(home / 'config.json')
+    CONFIG.unlink()
+
+
+def destinations(require_id=True, include_invalid=False):
+    """Every configured destination, oldest first. An invalid one is skipped, or, with include_invalid, listed
+    with its error so the page can say so."""
+    if os.getuid() == 0: migrate()
+    found = []
+    if not DESTINATIONS.is_dir(): return found
+    for home in sorted(DESTINATIONS.iterdir(), key=lambda p: p.stat().st_mtime):
+        if home.name.startswith('.') or not home.is_dir() or home.is_symlink() or not (home / 'config.json').is_file(): continue
+        try: found.append(load(home / 'config.json', require_id))
+        except RemoteFailed as exc:
+            if include_invalid: found.append({'id': home.name, 'name': home.name[:8], 'error': str(exc), 'type': None, 'enabled': False, 'invalid': True})
+    found.sort(key=lambda d: d.get('created', 0))
+    return found
+
+
+def destination(ident, require_id=True):
+    from .core import request_id
+    request_id(ident)
+    path = DESTINATIONS / ident / 'config.json'
+    if not path.is_file(): raise ValueError('Unknown destination')
+    return load(path, require_id)
+
+
+def enabled_destinations(require_id=True):
+    return [d for d in destinations(require_id=require_id) if d.get('enabled', True)]
+
+
+def settings(require_id=True):
+    """Before 1.5.0 there was one destination; readers that still think so get the first off-machine one, or the
+    first of any kind. None without any; RemoteFailed when the only ones there are invalid."""
+    every = destinations(require_id=require_id, include_invalid=True)
+    valid = [d for d in every if not d.get('invalid')]
+    if not valid:
+        if every: raise RemoteFailed(every[0]['error'])
+        return None
+    return next((d for d in valid if d['type'] != 'local'), valid[0])
+
+
+def verified_everywhere(ledger, job_ids=None):
+    """The artifacts every enabled destination has verified, or None when no destination is enabled: the
+    guard local pruning uses, so a backup is never removed here before it has been copied everywhere it goes."""
+    active = enabled_destinations()
+    if not active: return None
+    with ledger.db() as db:
+        held = None
+        for config in active:
+            rows = {r[0] for r in db.execute('SELECT job_id FROM remote_copies WHERE destination=? AND verified>0', (config['destination'],))}
+            held = rows if held is None else held & rows
+    return held or set()
 
 
 def command(config):
@@ -109,7 +211,7 @@ def command(config):
             options += ['-o', 'BatchMode=no', '-o', 'PubkeyAuthentication=no', '-o', 'PreferredAuthentications=password', '-o', 'NumberOfPasswordPrompts=1']
             env.update({'SSH_ASKPASS': config['ssh_askpass_file'], 'SSH_ASKPASS_REQUIRE': 'force', 'DISPLAY': 'none:0'})
         args += ['-o', 'sftp.args=' + shlex.join(options)]
-    else:
+    elif config['type'] == 's3':
         env.update(json.loads(regular(private(config['aws_credentials_file']))))
     return args, env
 
@@ -307,35 +409,53 @@ def pending(ledger, destination, site_id=None):
             (destination, site_id) if site_id else (destination,))]
 
 
-def status(ledger, site_id):
-    try: config = settings()
-    except RemoteFailed as exc: return {'state': 'configuration error', 'error': str(exc)}
-    destination = config['destination'] if config else ''
+def destination_status(ledger, config, site_id):
+    destination = config['destination']
     with ledger.db() as db:
         cycle = db.execute('SELECT * FROM remote_cycles WHERE destination=?', (destination,)).fetchone()
         receipt = db.execute('''SELECT r.job_id,r.snapshot,r.verified,b.created FROM remote_copies r
             JOIN backup_jobs b ON b.id=r.job_id WHERE r.destination=? AND (? IS NULL OR b.site_id=?) AND r.verified>0
             ORDER BY b.created DESC LIMIT 1''', (destination, site_id, site_id)).fetchone()
-    with ledger.db() as db:
         site_receipt = db.execute('''SELECT r.job_id,r.snapshot,r.verified,s.created FROM remote_copies r
             JOIN site_backups s ON s.id=r.job_id WHERE r.destination=? AND (? IS NULL OR s.site_id=?) AND r.verified>0
             ORDER BY s.created DESC LIMIT 1''', (destination, site_id, site_id)).fetchone()
+    return {'id': config['id'], 'name': config['name'], 'type': config['type'], 'repository': config['repository'], 'enabled': config.get('enabled', True),
+            'state': 'configured' if config.get('enabled', True) else 'paused',
+            'pending': len(pending(ledger, destination, site_id)), 'pending_sites': len(pending_sites(ledger, destination, site_id)),
+            'cycle': dict(cycle) if cycle else None, 'last_copy': dict(receipt) if receipt else None, 'last_site_copy': dict(site_receipt) if site_receipt else None}
+
+
+def status(ledger, site_id):
+    """Every destination's state, and the summary older pages read: the state of the whole, the newest copies
+    anywhere, the copies still waiting for any destination."""
     from .retention import policy as retention_policy, describe
     rule = retention_policy()
-    return {'state': ('paused' if not config.get('enabled', True) else 'configured') if config else 'not configured',
-            'type': config['type'] if config else None, 'pending': len(pending(ledger, destination, site_id)),
-            'pending_sites': len(pending_sites(ledger, destination, site_id)),
-            'cycle': dict(cycle) if cycle else None, 'last_copy': dict(receipt) if receipt else None,
-            'last_site_copy': dict(site_receipt) if site_receipt else None,
+    every = destinations(include_invalid=True)
+    items = []; errors = []
+    for config in every:
+        if config.get('invalid'): errors.append(config); items.append({**config, 'state': 'configuration error', 'pending': 0, 'pending_sites': 0, 'cycle': None, 'last_copy': None, 'last_site_copy': None}); continue
+        items.append(destination_status(ledger, config, site_id))
+    valid = [i for i in items if not i.get('invalid')]
+    newest = lambda key: max((i[key] for i in valid if i.get(key)), key=lambda r: r['created'], default=None)
+    state = ('not configured' if not every else 'configuration error' if errors and not valid else
+             'configured' if any(i['enabled'] for i in valid) else 'paused')
+    first = next((i for i in valid if i['type'] != 'local'), valid[0] if valid else None)
+    return {'state': state, 'type': first['type'] if first else None, 'destinations': items,
+            'error': errors[0]['error'] if errors else '',
+            'pending': sum(i['pending'] for i in valid), 'pending_sites': sum(i['pending_sites'] for i in valid),
+            'cycle': first['cycle'] if first else None, 'last_copy': newest('last_copy'), 'last_site_copy': newest('last_site_copy'),
             'retention': rule, 'retention_text': describe(rule), 'retention_days': rule['database_days']}
 
 
-def request(ledger):
-    config = settings()
-    if not config or not config.get('enabled', True): raise ValueError('Configure and enable a remote destination first.')
+def request(ledger, ident=None):
+    """Run the next cycle now, for one destination or every enabled one."""
+    chosen = [destination(ident)] if ident else enabled_destinations()
+    chosen = [c for c in chosen if c.get('enabled', True)]
+    if not chosen: raise ValueError('Connect and enable a destination first.')
     with ledger.db() as db:
-        db.execute('INSERT OR IGNORE INTO remote_cycles(destination) VALUES (?)', (config['destination'],))
-        db.execute('UPDATE remote_cycles SET next_run=0 WHERE destination=?', (config['destination'],))
+        for config in chosen:
+            db.execute('INSERT OR IGNORE INTO remote_cycles(destination) VALUES (?)', (config['destination'],))
+            db.execute('UPDATE remote_cycles SET next_run=0 WHERE destination=?', (config['destination'],))
 
 
 def prune(ledger, config):
@@ -383,16 +503,18 @@ def copy_record(ledger, config):
         identity = server_record.digest(record)
         try: state = json.loads(RECORD_STATE.read_text())
         except (OSError, ValueError): state = {}
-        fresh = state.get('destination') == config['destination'] and state.get('digest') == identity and time.time() - state.get('uploaded_at', 0) < 86400
+        if 'destination' in state: state = {state['destination']: state}   # the single-destination shape of releases before 1.5.0
+        mine = state.get(config['destination']) or {}
+        fresh = mine.get('digest') == identity and time.time() - mine.get('uploaded_at', 0) < 86400
         if fresh: return
         output = execute(config, ['backup', '--json', '--quiet', '--host', 'reeve', '--tag', server_record.TAG, str(server_record.RECORD)])
         snapshot = snapshot_from_backup(output) or existing_snapshot(config, server_record.TAG)
         if not snapshot: return
         # Keep only the newest record snapshot: the old ones say nothing the new one does not.
         execute(config, ['forget', '--quiet', '--tag', server_record.TAG, '--keep-last', '3'])
+        state[config['destination']] = {'digest': identity, 'uploaded_at': time.time(), 'snapshot': snapshot}
         tmp = RECORD_STATE.with_name('.server-record-upload.new')
-        tmp.write_text(json.dumps({'destination': config['destination'], 'digest': identity, 'uploaded_at': time.time(), 'snapshot': snapshot}))
-        tmp.chmod(0o600); tmp.replace(RECORD_STATE)
+        tmp.write_text(json.dumps(state)); tmp.chmod(0o600); tmp.replace(RECORD_STATE)
     except Exception:
         return
 
@@ -447,9 +569,7 @@ def cycle(ledger, config, force=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--init', action='store_true', help='Initialize a NEW configured repository, then print its ID')
-    parser.add_argument('--identify', action='store_true', help='Read an existing repository ID for explicit pinning')
-    parser.add_argument('--force', action='store_true', help='Run the pending queue now')
+    parser.add_argument('--force', action='store_true', help='Run the pending queue now, for every enabled destination')
     args = parser.parse_args()
     if os.getuid() != 0: raise SystemExit('Run as root')
     os.umask(0o077)
@@ -457,16 +577,10 @@ def main():
         with LOCK.open('a') as lock:
             try: fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError: return
-            config = settings(require_id=not (args.init or args.identify))
-            if args.init or args.identify:
-                if not config: raise RemoteFailed('Create the private destination configuration first.')
-                if args.init: execute(config, ['init'])
-                ident = json.loads(execute(config, ['cat', 'config']))['id']
-                if not HEX.fullmatch(ident): raise RemoteFailed('Invalid repository identity.')
-                print(json.dumps({'repository_id': ident})); return
-            if not config: return
             from .core import Ledger
-            cycle(Ledger('/srv/ops/panel/worker/jobs.sqlite3'), config, force=args.force)
+            ledger = Ledger('/srv/ops/panel/worker/jobs.sqlite3')
+            for config in enabled_destinations():
+                cycle(ledger, config, force=args.force)
     except Exception:
         raise SystemExit('Remote backup setup failed; check private configuration, credentials and repository access.') from None
 

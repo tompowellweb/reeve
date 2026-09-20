@@ -47,8 +47,15 @@ def initialize(db):
 # ---- discovery
 
 def request_scan(source, folder=''):
-    """Ask the worker for a scan. `source` is repository, folder or local."""
-    if source not in ('repository', 'folder', 'local'): raise ValueError('Scan the repository, a folder or this server')
+    """Ask the worker for a scan. `source` is `repository:<destination id>`, folder or local (`repository` alone
+    means the first destination, for the command line and older callers)."""
+    from . import remote_backup as remote
+    if source == 'repository':
+        first = remote.settings()
+        if not first: raise ValueError('No backup destination is connected')
+        source = 'repository:' + first['id']
+    if source.startswith('repository:'): remote.destination(source[len('repository:'):])
+    elif source not in ('folder', 'local'): raise ValueError('Scan a repository, a folder or this server')
     if source == 'folder':
         if not re.fullmatch(r'/[A-Za-z0-9_][A-Za-z0-9_./-]*', folder or '') or '/../' in folder + '/': raise ValueError('Give an absolute folder path')
     REQUEST.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -100,17 +107,17 @@ def entry_from_manifest(manifest, source, snapshot=''):
     return None
 
 
-def entry_from_tags(snapshot):
+def entry_from_tags(snapshot, source='repository'):
     """Pure: a site backup or a dump described by its snapshot's tags alone (the manifest is read only when needed)."""
     tags = dict(t.split(':', 1) for t in snapshot.get('tags', []) if ':' in t)
     if 'site-name' not in tags: return None
     if 'hosting-site' in tags:
-        return {'kind': 'site', 'id': tags['hosting-site'], 'source': 'repository', 'snapshot': snapshot['id'], 'site_id': None,
+        return {'kind': 'site', 'id': tags['hosting-site'], 'source': source, 'snapshot': snapshot['id'], 'site_id': None,
                 'site_name': tags['site-name'], 'site_kind': tags.get('site-kind'), 'runtime': None, 'domains': [tags['domain']] if tags.get('domain') else [],
                 'backup_kind': tags.get('backup-kind'), 'completed_at': snapshot_time(snapshot.get('time')), 'coverage': None, 'bytes': None,
                 'has_dump': None, 'engine': None, 'from_tags': True}
     if 'hosting-db' in tags:
-        return {'kind': 'dump', 'id': tags['hosting-db'], 'source': 'repository', 'snapshot': snapshot['id'], 'site_id': None,
+        return {'kind': 'dump', 'id': tags['hosting-db'], 'source': source, 'snapshot': snapshot['id'], 'site_id': None,
                 'site_name': tags['site-name'], 'engine': tags.get('engine'), 'completed_at': snapshot_time(snapshot.get('time')),
                 'bytes': None, 'consistency': None, 'from_tags': True}
     return None
@@ -180,13 +187,13 @@ def scan_repository(config, budget=600, progress=None):
         done += 1
         if progress and done % 5 == 0: progress(done, len(listing))
         manifest = cached_manifest(identity)
-        if manifest is None and entry_from_tags(snapshot):
-            found.append(entry_from_tags(snapshot)); continue   # described by its tags: no read needed
+        if manifest is None and entry_from_tags(snapshot, 'repository:' + config['id']):
+            found.append(entry_from_tags(snapshot, 'repository:' + config['id'])); continue   # described by its tags: no read needed
         if manifest is None:
             paths = snapshot.get('paths') or []
             manifest_path = next((p for p in paths if p.endswith('manifest.json')), None) or (paths[0].rstrip('/') + '/manifest.json' if paths else None)
             if time.monotonic() - started > budget or not manifest_path:
-                entry = entry_from_tags(snapshot)
+                entry = entry_from_tags(snapshot, 'repository:' + config['id'])
                 if entry: found.append(entry)
                 else: unread += 1
                 continue
@@ -194,11 +201,11 @@ def scan_repository(config, budget=600, progress=None):
                 manifest = json.loads(remote.execute(config, ['dump', snapshot['id'], manifest_path], maximum=4 * 1024 ** 2))
                 remember_manifest(identity, manifest)
             except Exception:
-                entry = entry_from_tags(snapshot)
+                entry = entry_from_tags(snapshot, 'repository:' + config['id'])
                 if entry: found.append(entry)
                 else: unread += 1
                 continue
-        entry = entry_from_manifest(manifest, 'repository', snapshot['id'])
+        entry = entry_from_manifest(manifest, 'repository:' + config['id'], snapshot['id'])
         if entry: found.append(entry)
     newest = json.loads(remote.execute(config, ['snapshots', '--json', '--tag', TAG, '--latest', '1']))
     if newest:
@@ -215,7 +222,9 @@ def group(entries, ledger):
     with ledger.db() as db: kept = {r[0] for r in db.execute('SELECT id FROM site_backups WHERE kept=1')}
     by_name = {}
     for entry in entries:
-        if entry['source'] == 'local' and copied is not None: entry['offsite'] = copied.get(entry['id'], 'waiting')
+        if entry['source'] == 'local' and copied is not None:
+            entry['copies'] = copied['held'].get(entry['id']) or [{'name': n, 'state': 'waiting'} for n in copied['names']]
+            entry['offsite'] = 'verified' if all(c['state'] == 'verified' for c in entry['copies']) else 'waiting'
         if entry['id'] in kept: entry['kept'] = True
         site = by_name.setdefault(entry['site_name'] or '(unnamed)', {'name': entry['site_name'] or '(unnamed)', 'site_ids': [], 'site_kind': None, 'runtime': None,
                                                                           'domains': [], 'backups': [], 'dumps': [], 'live': None})
@@ -242,13 +251,20 @@ def group(entries, ledger):
 
 
 def offsite_copies(ledger):
-    """Which local artifacts the connected destination holds: job id to 'verified' or 'forgotten'; None without a destination."""
+    """Which local artifacts each destination holds: job id to [{name, state}] over every destination; None without any."""
     from . import remote_backup as remote
-    config = remote.settings(require_id=False)
-    if not config: return None
+    every = remote.destinations(require_id=False)
+    if not every: return None
+    held = {}
     with ledger.db() as db:
-        rows = db.execute('SELECT job_id, verified, forgotten FROM remote_copies WHERE destination=?', (config['destination'],)).fetchall()
-    return {r['job_id']: ('forgotten' if r['forgotten'] else 'verified' if r['verified'] else 'waiting') for r in rows}
+        for config in every:
+            rows = db.execute('SELECT job_id, verified, forgotten FROM remote_copies WHERE destination=?', (config['destination'],)).fetchall()
+            states = {r['job_id']: ('forgotten' if r['forgotten'] else 'verified' if r['verified'] else 'waiting') for r in rows}
+            for job_id in set(states) | set(held):
+                held.setdefault(job_id, [])
+            for job_id in held:
+                held[job_id].append({'name': config['name'], 'state': states.get(job_id, 'waiting')})
+    return {'names': [c['name'] for c in every], 'held': held}
 
 
 def perform_scan(ledger):
@@ -263,10 +279,10 @@ def perform_scan(ledger):
         write_scan({**result, 'progress': f'read {done} of {total} snapshots'})
     try:
         entries, record, unread = [], None, 0
-        if request['source'] == 'repository':
+        if request['source'].startswith('repository:'):
             from . import remote_backup as remote
-            config = remote.settings()
-            if not config: raise ValueError('No backup destination is connected')
+            config = remote.destination(request['source'][len('repository:'):])
+            result['destination'] = config['name']
             entries, record, unread = scan_repository(config, progress=progress)
         elif request['source'] == 'folder':
             entries, record = scan_folder(request['folder'])
@@ -380,10 +396,9 @@ def fetch(row):
             shutil.chown(path, 'root', 'root'); path.chmod(0o700 if path.is_dir() else 0o600)
         partial.rename(target)
         return 'copied from the folder'
-    if row['source'] == 'repository':
+    if row['source'].startswith('repository:'):
         from . import remote_backup as remote
-        config = remote.settings()
-        if not config: raise ValueError('No backup destination is connected')
+        config = remote.destination(row['source'][len('repository:'):])
         if not row['snapshot']: raise ValueError('The scan did not record a snapshot for this backup')
         shutil.rmtree(FETCH, ignore_errors=True); FETCH.mkdir(mode=0o700, parents=True)
         args, env = remote.command(config)
@@ -467,7 +482,9 @@ def tick(ledger, host):
 
 
 def status(ledger):
-    return {'scan': read_scan(), 'recoveries': recoveries(ledger), 'actions': actions(ledger)}
+    from . import remote_backup as remote
+    names = [{'id': d['id'], 'name': d['name'], 'type': d['type']} for d in remote.destinations(require_id=False)]
+    return {'scan': read_scan(), 'recoveries': recoveries(ledger), 'actions': actions(ledger), 'destinations': names}
 
 
 # ---- managing what the scan found: download a backup, or let one go
@@ -569,14 +586,13 @@ def delete_local(ledger, row):
 
 def delete_remote(ledger, row):
     from . import remote_backup as remote
-    config = remote.settings()
-    if not config: raise ValueError('No backup destination is connected')
+    config = remote.destination(row['source'][len('repository:'):])
     if not row['snapshot']: raise ValueError('The scan did not record a snapshot for this backup')
     remote.execute(config, ['forget', row['snapshot']])
     with ledger.db() as db:
         db.execute('UPDATE remote_copies SET forgotten=? WHERE destination=? AND job_id=?', (time.time(), config['destination'], row['backup_id']))
     remote.execute(config, ['prune'], maximum=64 * 1024**2)
-    return 'forgotten and the repository pruned; a local copy, if any, stays'
+    return 'forgotten in ' + config['name'] + ' and that repository pruned; a local copy, if any, stays'
 
 
 def delete_folder(row):
@@ -598,7 +614,7 @@ def perform_action(ledger, row):
             update_action(ledger, ident, 'succeeded', fetched + '; files ready for six hours', result=result)
             return
         if row['source'] == 'local': how = delete_local(ledger, row)
-        elif row['source'] == 'repository': how = delete_remote(ledger, row)
+        elif row['source'].startswith('repository:'): how = delete_remote(ledger, row)
         elif row['source'].startswith('folder:'): how = delete_folder(row)
         else: raise ValueError('Unknown backup source')
         forget_entry(row['kind'], row['backup_id'])

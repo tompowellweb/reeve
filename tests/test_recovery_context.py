@@ -85,7 +85,7 @@ def test_notes_and_server_destination_require_authentication_csrf_and_escape_out
     assert '&lt;script&gt;not_executed' in reply.text
     assert client.post('/sites/context/recovery/plan', data={'csrf': csrf(page)}).status_code == 404
     destination = client.get('/backups')
-    assert destination.status_code == 200 and 'One destination for all sites' in destination.text
-    assert 'Copy waiting databases' not in destination.text
+    assert destination.status_code == 200 and 'Any number of restic repositories' in destination.text and 'No destination is connected yet' in destination.text
+    assert 'Copy now' not in destination.text
     assert client.post('/backups/copy', data={'csrf': csrf(page)}).status_code == 200
-    assert 'Configure and enable' in client.post('/backups/copy', data={'csrf': csrf(page)}).text
+    assert 'Connect and enable a destination first' in client.post('/backups/copy', data={'csrf': csrf(page)}).text

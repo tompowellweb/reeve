@@ -130,10 +130,13 @@ def test_scan_requests_are_recorded_and_performed(world, monkeypatch):
     assert rs.perform_scan(ledger) is True and rs.perform_scan(ledger) is False
     result = rs.read_scan()
     assert result['state'] == 'succeeded' and result['sites'][0]['name'] == 'shop' and result['sites'][0]['live']['name'] == 'shop' and result['record'] is None
-    rs.request_scan('repository')
     monkeypatch.setattr('reeve.remote_backup.settings', lambda require_id=True: None)
+    with pytest.raises(ValueError, match='No backup destination'): rs.request_scan('repository')
+    monkeypatch.setattr('reeve.remote_backup.destination', lambda ident, **k: {'id': ident, 'name': 'Gone', 'type': 'sftp'})
+    rs.request_scan('repository:' + str(uuid.UUID(int=4)))
+    monkeypatch.setattr('reeve.remote_backup.destination', lambda ident, **k: (_ for _ in ()).throw(ValueError('Unknown destination')))
     rs.perform_scan(ledger)
-    assert rs.read_scan()['state'] == 'failed' and 'No backup destination' in rs.read_scan()['error']
+    assert rs.read_scan()['state'] == 'failed' and 'Unknown destination' in rs.read_scan()['error']
 
 
 def test_the_pages_source_choice_names_a_backup_or_a_dump(world):
@@ -160,7 +163,7 @@ def test_tagged_dump_snapshots_need_no_manifest_and_newest_are_read_first(monkey
         return json.dumps({**SITE_MANIFEST, 'operation': str(uuid.UUID(int=1))})
     monkeypatch.setattr('reeve.remote_backup.execute', execute)
     progress = []
-    found, record, unread = rs.scan_repository({}, progress=lambda d, t: progress.append((d, t)))
+    found, record, unread = rs.scan_repository({'id': 'dest-id', 'name': 'NAS'}, progress=lambda d, t: progress.append((d, t)))
     assert [e['id'] for e in found] == [str(uuid.UUID(int=2)), str(uuid.UUID(int=1))]  # newest first; the dump came from its tags
     assert found[0]['kind'] == 'dump' and found[0]['engine'] == 'mariadb' and found[0]['from_tags']
     assert sum(1 for c in calls if c[0] == 'dump') == 1 and unread == 0 and record is None  # one manifest read, for the untagged copy
@@ -197,7 +200,13 @@ def test_manage_picks_are_checked_and_deletions_remove_one_copy_only(world, monk
     assert rs.find_entry(rs.read_scan(), 'site', blog_backup) is None and [s['name'] for s in rs.read_scan()['sites']] == ['shop']
     # Repository: forget the snapshot, prune, record it; the local copy is not touched.
     calls = []
-    monkeypatch.setattr('reeve.remote_backup.settings', lambda require_id=True: {'destination': 'sftp:x', 'repository': 'r', 'password_file': 'p', 'timeout_seconds': 5})
+    nas = {'id': str(uuid.UUID(int=8)), 'name': 'NAS', 'type': 'sftp', 'destination': 'sftp:x', 'repository': 'r', 'password_file': 'p', 'timeout_seconds': 5, 'enabled': True}
+    monkeypatch.setattr('reeve.remote_backup.destinations', lambda **k: [nas]); monkeypatch.setattr('reeve.remote_backup.destination', lambda ident, **k: nas)
+    current = rs.read_scan()
+    for site in current['sites']:
+        for e in site['backups'] + site['dumps']:
+            if e['source'] == 'repository': e['source'] = 'repository:' + nas['id']
+    rs.write_scan(current)
     monkeypatch.setattr('reeve.remote_backup.execute', lambda config, args, **k: calls.append(args))
     with ledger.db() as db: db.execute("INSERT INTO remote_copies (destination, job_id, snapshot, verified) VALUES ('sftp:x', ?, 'snap1', 9)", (shop_backup,))
     local_copy = _artifact(rs.sites, shop_backup, SITE_MANIFEST, 'files.tar')

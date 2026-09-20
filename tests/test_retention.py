@@ -53,7 +53,7 @@ def test_policy_reads_defaults_maps_the_old_days_and_rejects_nonsense(tmp_path, 
         (tmp_path / 'server.yaml').write_text(bad + '\n')
         with pytest.raises(ValueError): retention.policy()
     (tmp_path / 'server.yaml').write_text('retention: {local: {daily: 2}}\n')
-    assert retention.describe(retention.policy()) == 'database dumps 2 days; complete site backups: here the newest of the last 2 daily; off-machine the newest of the last 7 daily, 4 weekly, 12 monthly'
+    assert retention.describe(retention.policy()) == 'database dumps 2 days; complete site backups: here the newest of the last 2 daily; in the repositories the newest of the last 7 daily, 4 weekly, 12 monthly'
 
 
 def test_local_dump_retention_respects_window_newest_and_pending_uploads(tmp_path, monkeypatch):
@@ -71,14 +71,14 @@ def test_local_dump_retention_respects_window_newest_and_pending_uploads(tmp_pat
         with ledger.db() as db: db.execute('UPDATE backup_jobs SET created=? WHERE id=?', (time.time() - age, job['id']))
         return job['id']
     old, older, fresh = artifact(5 * 86400), artifact(4 * 86400), artifact(3600)
-    monkeypatch.setattr(remote, 'settings', lambda **k: None)
+    monkeypatch.setattr(remote, 'destinations', lambda **k: [])
     local.retention_tick(ledger)
     states = {j['id']: j['state'] for j in ledger.backup_jobs(row['id'])}
     assert states[fresh] == 'succeeded' and states[old] == 'pruned' and states[older] == 'pruned'
     assert not local.artifact_path(old).exists() and local.artifact_path(fresh).exists()
     # With a destination configured, an old dump that was never copied off-machine stays.
     stale = artifact(6 * 86400)
-    monkeypatch.setattr(remote, 'settings', lambda **k: {'destination': 'dest', 'enabled': True})
+    monkeypatch.setattr(remote, 'destinations', lambda **k: [{'id': 'd', 'name': 'NAS', 'type': 'sftp', 'destination': 'dest', 'enabled': True}])
     local.retention_tick(ledger)
     assert {j['id']: j['state'] for j in ledger.backup_jobs(row['id'])}[stale] == 'succeeded'
     with ledger.db() as db: db.execute("INSERT INTO remote_copies(destination, job_id, snapshot, verified) VALUES ('dest', ?, 'abc', 1)", (stale,))
@@ -95,8 +95,8 @@ def test_remote_cycle_copies_site_snapshots_and_forgets_outside_policy(tmp_path,
     monkeypatch.setattr(sb.ci, 'regular', lambda p: p.read_bytes())
     monkeypatch.setattr(remote, 'repository', lambda c: None)
     monkeypatch.setattr(remote, 'CACHE', tmp_path / 'cache')
-    config = {'destination': 'dest', 'enabled': True, 'timeout_seconds': 10, 'repository_id': 'a' * 64, 'prune_local_after_days': 0, 'type': 'sftp'}
-    monkeypatch.setattr(remote, 'settings', lambda **k: config)
+    config = {'id': 'dest-id', 'name': 'NAS', 'destination': 'dest', 'enabled': True, 'timeout_seconds': 10, 'repository_id': 'a' * 64, 'prune_local_after_days': 0, 'type': 'sftp', 'repository': 'sftp://u@nas//x'}
+    monkeypatch.setattr(remote, 'settings', lambda **k: config); monkeypatch.setattr(remote, 'destinations', lambda **k: [config])
     def snapshot(kind, age):
         ident = str(uuid.uuid4()); root = sb.artifact_path(ident); root.mkdir()
         (root / 'files.tar').write_bytes(b'tar ' + ident.encode())
@@ -153,11 +153,11 @@ def test_local_site_prune_follows_the_local_counts_keeps_kept_and_waits_for_the_
     for module in (st, hm, retention, sb, __import__('reeve.mail', fromlist=['OPS']), __import__('reeve.php_updates', fromlist=['OPS'])): monkeypatch.setattr(module, 'OPS', ops)
     monkeypatch.setattr(st, 'trusted', lambda *a, **k: None); monkeypatch.setattr(hm, 'trusted', lambda *a, **k: None)
     monkeypatch.setattr(retention, 'regular', lambda p: p.read_bytes())
-    monkeypatch.setattr(remote, 'settings', lambda **k: None)
+    monkeypatch.setattr(remote, 'destinations', lambda **k: [])
     surplus = sb.local_surplus(ledger, {'daily': 2, 'weekly': 0, 'monthly': 0})
     assert [j['id'] for j in surplus] == [oldest, older] and sum(j['bytes'] for j in surplus) == 12000
     # With a destination connected, a copy the repository has not verified yet stays whatever the counts say.
-    monkeypatch.setattr(remote, 'settings', lambda **k: {'destination': 'dest', 'enabled': True})
+    monkeypatch.setattr(remote, 'destinations', lambda **k: [{'id': 'd', 'name': 'NAS', 'type': 'sftp', 'destination': 'dest', 'enabled': True}])
     assert sb.local_surplus(ledger, {'daily': 2, 'weekly': 0, 'monthly': 0}) == []
     with ledger.db() as db:
         for ident in (oldest, older): db.execute("INSERT INTO remote_copies(destination, job_id, snapshot, verified) VALUES ('dest', ?, 's', 1)", (ident,))
@@ -169,7 +169,7 @@ def test_local_site_prune_follows_the_local_counts_keeps_kept_and_waits_for_the_
     assert states == {newest: 'succeeded', yesterday: 'succeeded', older: 'succeeded', oldest: 'pruned', final: 'succeeded'}
     assert not sb.artifact_path(oldest).exists() and sb.artifact_path(older).exists()
     # The settings preview names what a candidate policy would remove; saving with "keep" marks them kept first.
-    monkeypatch.setattr('reeve.remote_backup.settings', lambda **k: None)
+    monkeypatch.setattr('reeve.remote_backup.destinations', lambda **k: [])
     values = {'hour': '3', 'local_path': str(tmp_path / 'b'), 'database_days': '2', 'local_daily': '1', 'local_weekly': '0', 'local_monthly': '0', 'remote_daily': '7', 'remote_weekly': '4', 'remote_monthly': '12'}
     found = st.surplus(ledger, values)
     assert found['local'] == {'count': 1, 'bytes': 100, 'ids': [yesterday]} and found['remote']['count'] == 0

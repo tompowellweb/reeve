@@ -1,5 +1,5 @@
-"""Two retention policies for complete site backups, one for the copies here and one for the off-machine
-repository, and one window for database dumps.
+"""Two retention policies for complete site backups, one for the copies here and one for every restic
+repository they are copied to, and one window for database dumps.
 
 Database dumps are short-lived because every complete site backup carries a fresh dump. Complete site
 backups thin to counts, in restic's words: the newest backup of each of the last N days that have one,
@@ -40,7 +40,7 @@ def policy(document=None):
         result[scope] = {**DEFAULT[scope], **given}
         for key, value in result[scope].items():
             if type(value) is not int or not 0 <= value <= 3650: raise ValueError('Invalid retention value for ' + scope + ' ' + key)
-        if result[scope]['daily'] < 1: raise ValueError('Keep at least one daily backup ' + ('here' if scope == 'local' else 'off-machine'))
+        if result[scope]['daily'] < 1: raise ValueError('Keep at least one daily backup ' + ('here' if scope == 'local' else 'in the repositories'))
     if type(result['database_days']) is not int or not 1 <= result['database_days'] <= 3650: raise ValueError('Database dumps must be kept at least one day')
     return result
 
@@ -52,7 +52,7 @@ def describe_counts(counts):
 
 def describe(rule):
     return ('database dumps ' + str(rule['database_days']) + ' days; complete site backups: here the newest of the last '
-            + describe_counts(rule['local']) + '; off-machine the newest of the last ' + describe_counts(rule['remote']))
+            + describe_counts(rule['local']) + '; in the repositories the newest of the last ' + describe_counts(rule['remote']))
 
 
 def keep_site_backups(entries, now, counts):

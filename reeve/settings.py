@@ -119,9 +119,7 @@ def surplus(ledger, values):
     from . import retention, site_backup, remote_backup
     rule = retention.policy(merge(document(), 'backups', values))
     local = site_backup.local_surplus(ledger, rule['local'])
-    try: config = remote_backup.settings()
-    except remote_backup.RemoteFailed: config = None
-    remote = remote_backup.remote_surplus(ledger, config, rule['remote']) if config else []
+    remote = [item for config in remote_backup.destinations() for item in remote_backup.remote_surplus(ledger, config, rule['remote'])]
     return {'local': {'count': len(local), 'bytes': sum(j['bytes'] for j in local), 'ids': [j['id'] for j in local]},
             'remote': {'count': len(remote), 'bytes': sum(j['bytes'] for j in remote), 'ids': [j['id'] for j in remote]}}
 

@@ -391,7 +391,7 @@ def create_app(auth_path="/srv/ops/panel/web/auth.sqlite3", call=rpc, status_pat
     @app.post('/backups/enabled')
     async def backup_enabled(request: Request):
         form = await mutation(request)
-        try: call({'op': 'backup-enabled', 'enabled': form.get('enabled') == 'yes'})
+        try: call({'op': 'backup-enabled', 'id': str(form.get('id', '')), 'enabled': form.get('enabled') == 'yes'})
         except (ValueError, OSError) as exc: return destination_page(request, error=str(exc))
         return RedirectResponse('/backups', 303)
 
@@ -399,7 +399,7 @@ def create_app(auth_path="/srv/ops/panel/web/auth.sqlite3", call=rpc, status_pat
     async def backup_disconnect(request: Request):
         form = await mutation(request)
         if form.get('confirm') != 'disconnect': return destination_page(request, error='Type disconnect to confirm')
-        try: call({'op': 'backup-disconnect'})
+        try: call({'op': 'backup-disconnect', 'id': str(form.get('id', '')), 'remove_repository': form.get('remove_repository') == 'yes'})
         except (ValueError, OSError) as exc: return destination_page(request, error=str(exc))
         return RedirectResponse('/backups', 303)
 
@@ -440,14 +440,14 @@ def create_app(auth_path="/srv/ops/panel/web/auth.sqlite3", call=rpc, status_pat
     @app.post('/backups/reveal')
     async def backup_reveal(request: Request):
         await mutation(request)
-        try: result = call({'op': 'backup-reveal'})
+        try: result = call({'op': 'backup-reveal', 'id': str(form.get('id', ''))})
         except (ValueError, OSError) as exc: return destination_page(request, error=str(exc))
-        return destination_page(request, revealed=result['password'])
+        return destination_page(request, revealed=result)
 
     @app.post('/backups/copy')
     async def copy_backups(request: Request):
-        await mutation(request)
-        try: call({'op': 'backup-remote'})
+        form = await mutation(request)
+        try: call({'op': 'backup-remote', 'id': str(form.get('id', ''))})
         except (ValueError, OSError) as exc: return destination_page(request, error=str(exc))
         return RedirectResponse('/backups', 303)
 
@@ -465,7 +465,7 @@ def create_app(auth_path="/srv/ops/panel/web/auth.sqlite3", call=rpc, status_pat
                 call({'op': 'backup-schedule', 'site_id': row['id'], 'interval': int(form.get('interval', 15)),
                       'enabled': form.get('enabled') == 'on'})
             elif action == 'remote':
-                call({'op': 'backup-remote'})
+                call({'op': 'backup-remote', 'id': ''})
             else: raise HTTPException(404, 'Unknown backup action')
         except (ValueError, OSError) as exc:
             return render_site(request, row, error=str(exc))
