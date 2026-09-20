@@ -1,0 +1,82 @@
+{# Reeve's vocabulary on Tabler: one macro per concept. Pages call these; layout classes are not written by hand.
+   Each macro names the Tabler doc page its markup comes from (ui_refresh/tabler-docs). #}
+{% set TONES = {'ok': 'green', 'warn': 'yellow', 'bad': 'red', 'info': 'blue', 'muted': 'secondary'} %}
+
+{% macro icon(name, cls='') -%}
+<svg class="icon{% if cls %} {{cls}}{% endif %}" aria-hidden="true"><use href="/static/vendor/tabler-icons/sprite.svg#tabler-{{name}}"/></svg>
+{%- endmacro %}
+
+{# layout/page-headers: the page's title row; the caller's content is its actions #}
+{% macro page(title, pretitle='', subtitle='') -%}
+<div class="page-header d-print-none"><div class="row align-items-center g-2"><div class="col-12 col-md">{% if pretitle %}<div class="page-pretitle">{{pretitle}}</div>{% endif %}<h2 class="page-title">{{title}}</h2>{% if subtitle %}<div class="page-subtitle text-secondary">{{subtitle}}</div>{% endif %}</div>{% if caller %}<div class="col-12 col-md-auto ms-md-auto"><div class="btn-list">{{caller()}}</div></div>{% endif %}</div></div>
+{%- endmacro %}
+
+{# components/card: a titled group; `actions` is markup for the header's right side; `flush` puts a table or list flush to the edges #}
+{% macro section(title='', note='', id='', actions='', flush=false, cls='') -%}
+<div class="card{% if cls %} {{cls}}{% endif %}"{% if id %} id="{{id}}"{% endif %}>{% if title or actions %}<div class="card-header">{% if title %}<h3 class="card-title">{{title}}</h3>{% endif %}{% if actions %}<div class="card-actions">{{actions|safe}}</div>{% endif %}</div>{% endif %}{% if note %}<div class="card-body border-bottom py-2"><p class="text-secondary mb-0">{{note}}</p></div>{% endif %}{% if flush %}{{caller()}}{% else %}<div class="card-body">{{caller()}}</div>{% endif %}</div>
+{%- endmacro %}
+
+{# components/datagrid: label and value pairs; items is a list of (title, value) where value may be markup #}
+{% macro facts(items) -%}
+<div class="datagrid">{% for title, value in items %}<div class="datagrid-item"><div class="datagrid-title">{{title}}</div><div class="datagrid-content">{{value}}</div></div>{% endfor %}</div>
+{%- endmacro %}
+
+{# components/badge and components/status: a state word; dot=true for something alive #}
+{% macro state(text, tone='muted', dot=false) -%}
+{% if dot %}<span class="status status-{{TONES.get(tone, tone)}}"><span class="status-dot{% if tone == 'ok' %} status-dot-animated{% endif %}"></span> {{text}}</span>{% else %}<span class="badge bg-{{TONES.get(tone, tone)}}-lt">{{text}}</span>{% endif %}
+{%- endmacro %}
+
+{# components/alert: an error, a warning, a note, a secret shown once (important=true) #}
+{% macro notice(text, tone='info', important=false, title='') -%}
+<div class="alert alert-{{ {'ok': 'success', 'warn': 'warning', 'bad': 'danger', 'info': 'info', 'muted': 'secondary'}.get(tone, tone) }}{% if important %} alert-important{% endif %}" role="alert">{% if title %}<h4 class="alert-heading">{{title}}</h4>{% endif %}<div>{{text}}</div></div>
+{%- endmacro %}
+
+{# components/empty: nothing here yet; the caller's content is the action #}
+{% macro empty(title, text='', icon_name='') -%}
+<div class="empty">{% if icon_name %}<div class="empty-icon">{{icon(icon_name)}}</div>{% endif %}<p class="empty-title">{{title}}</p>{% if text %}<p class="empty-subtitle text-secondary">{{text}}</p>{% endif %}{% if caller %}<div class="empty-action">{{caller()}}</div>{% endif %}</div>
+{%- endmacro %}
+
+{# components/modal: a confirmation or a small form off the page; the caller's content is the body, usually a form; tone 'bad' marks a destructive one #}
+{% macro dialog(id, title, tone='') -%}
+<div class="modal modal-blur fade" id="{{id}}" tabindex="-1" aria-labelledby="{{id}}-title" aria-hidden="true"><div class="modal-dialog modal-dialog-centered" role="document"><div class="modal-content">{% if tone %}<div class="modal-status bg-{{TONES.get(tone, tone)}}"></div>{% endif %}<div class="modal-header"><h5 class="modal-title" id="{{id}}-title">{{title}}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body">{{caller()}}</div></div></div></div>
+{%- endmacro %}
+
+{# the button that opens a dialog #}
+{% macro opens(id, label, tone='') -%}
+<button type="button" class="btn{% if tone == 'bad' %} btn-outline-danger{% elif tone == 'primary' %} btn-primary{% endif %}" data-bs-toggle="modal" data-bs-target="#{{id}}">{{label}}</button>
+{%- endmacro %}
+
+{# forms/elements: a labelled control with help; the caller's content is the control #}
+{% macro form_row(label, hint='', cls='mb-3') -%}
+<div class="{{cls}}"><label class="form-label">{{label}}</label>{{caller()}}{% if hint %}<small class="form-hint">{{hint}}</small>{% endif %}</div>
+{%- endmacro %}
+
+{# forms/select-group: a few exclusive options; options is a list of (value, label) #}
+{% macro choice(name, options, current='') -%}
+<div class="form-selectgroup">{% for value, label in options %}<label class="form-selectgroup-item"><input type="radio" name="{{name}}" value="{{value}}" class="form-selectgroup-input"{% if value == current %} checked{% endif %}><span class="form-selectgroup-label">{{label}}</span></label>{% endfor %}</div>
+{%- endmacro %}
+
+{# forms/elements: on or off #}
+{% macro toggle(name, label, on=false, value='yes') -%}
+<label class="form-check form-switch"><input class="form-check-input" type="checkbox" name="{{name}}" value="{{value}}"{% if on %} checked{% endif %}><span class="form-check-label">{{label}}</span></label>
+{%- endmacro %}
+
+{# components/progress: a quantity against its limit #}
+{% macro progress(value, tone='info', label='') -%}
+<div class="progress progress-sm"><div class="progress-bar bg-{{TONES.get(tone, tone)}}" style="width: {{[0, [100, value|int]|min]|max}}%" role="progressbar" aria-valuenow="{{value|int}}" aria-valuemin="0" aria-valuemax="100"{% if label %} aria-label="{{label}}"{% endif %}></div></div>
+{%- endmacro %}
+
+{# layout/navs-tabs: items is a list of (href, label); current is the active href #}
+{% macro tabs(items, current) -%}
+<ul class="nav nav-tabs mb-3">{% for href, label in items %}<li class="nav-item"><a class="nav-link{% if href == current %} active{% endif %}" href="{{href}}"{% if href == current %} aria-current="page"{% endif %}>{{label}}</a></li>{% endfor %}</ul>
+{%- endmacro %}
+
+{# a moment, rendered in the viewer's zone by overview.js #}
+{% macro time(value) -%}
+{% if value %}<time data-timestamp="{{value}}">{{value|timestamp}}</time>{% else %}unknown time{% endif %}
+{%- endmacro %}
+
+{# a command, a key, a log: monospace, wraps, never overflows the page #}
+{% macro code(text, rows=0) -%}
+{% if rows %}<textarea readonly rows="{{rows}}" class="form-control font-monospace" onclick="this.select()">{{text}}</textarea>{% else %}<pre class="reeve-code mb-0">{{text}}</pre>{% endif %}
+{%- endmacro %}

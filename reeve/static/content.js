@@ -5,7 +5,7 @@ if (jobCard?.dataset.pending === 'yes' && !document.querySelector('form[action*=
       const response = await fetch(jobCard.dataset.statusUrl);
       if (response.ok) {
         const jobs = await response.json();
-        if (!jobs.some(job => ['queued', 'running'].includes(job.state)) && !document.querySelector('dialog[open], [data-concern-panel]:not([hidden])')) { window.location.reload(); return; }
+        if (!jobs.some(job => ['queued', 'running'].includes(job.state)) && !document.querySelector('dialog[open], .modal.show, [data-concern-panel]:not([hidden])')) { window.location.reload(); return; }
       }
     } catch (_) { /* Retry after a temporary panel interruption. */ }
     window.setTimeout(check, 3000);

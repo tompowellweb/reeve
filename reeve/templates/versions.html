@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% block title %}Version catalogue · Reeve{% endblock %}{% block content %}
+{% extends 'legacy_base.html' %}{% block title %}Version catalogue · Reeve{% endblock %}{% block content %}
 <a href="/">← Sites</a><h1>PHP version catalogue</h1>
 <p>Checked against Surý's signed Debian trixie repository. Refreshes every 30 days. Checking versions does not change running sites.</p>
 <section class="card" id="catalogue-operation" data-state="{{versions.job.state if versions.job else 'succeeded'}}">

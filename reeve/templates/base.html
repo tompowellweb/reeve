@@ -1,4 +1,32 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{% block title %}Reeve Panel{% endblock %}</title><link rel="stylesheet" href="/static/style.css"><script defer src="/static/poll.js"></script></head>
-<body><header><div class="masthead"><a class="brand" href="/">Reeve <span>Panel</span></a>{% if session and session.authenticated %}<nav class="top-nav" aria-label="Sections">{% for href, label in [('/', 'Sites'), ('/backups', 'Backups'), ('/recover', 'Recover'), ('/history', 'History'), ('/versions', 'PHP'), ('/databases/versions', 'Databases'), ('/mail', 'Mail'), ('/settings', 'Settings')] %}<a href="{{ href }}"{% if (request.url.path == href) or (href != '/' and request.url.path.startswith(href + '/')) or (href == '/' and request.url.path.startswith('/sites/')) %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>{% endif %}</div>{% if session and session.authenticated %}<form action="/logout" method="post"><input type="hidden" name="csrf" value="{{ session.csrf }}"><button class="quiet">Sign out</button></form>{% endif %}</header>
-<main>{% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}{% block content %}{% endblock %}</main><footer>Reeve Panel{% if release %} · {{ release.version or release.current[:7] }}{% if release.modified %} (modified){% endif %}{% if release.previous %}, previous {{ release.previous_version or release.previous[:7] }}{% endif %}{% endif %}{% if hostname %} · on {{ hostname }}{% endif %}</footer></body></html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>{% block title %}Reeve Panel{% endblock %}</title>
+<link rel="stylesheet" href="/static/vendor/tabler/tabler.min.css"><link rel="stylesheet" href="/static/reeve.css"><script defer src="/static/vendor/tabler/tabler.min.js"></script><script defer src="/static/poll.js"></script><script defer src="/static/overview.js"></script></head>
+{% import 'ui.html' as ui %}
+{% set authenticated = session and session.authenticated %}
+{% set path = request.url.path %}
+{% set menu = [('/', 'Sites', 'world', []),
+               ('/backups', 'Backups', 'archive', [('/backups', 'Destinations'), ('/recover', 'Recover'), ('/history', 'History'), ('/agent-access', 'Agent access')]),
+               ('/versions', 'Server', 'server', [('/versions', 'PHP'), ('/databases/versions', 'Databases'), ('/mail', 'Mail')]),
+               ('/settings', 'Settings', 'settings', [])] %}
+{% macro current(href) %}{{ (path == href) or (href != '/' and path.startswith(href + '/')) or (href == '/' and (path.startswith('/sites/') or path in ('/create', '/imports') or path.startswith('/imports/'))) }}{% endmacro %}
+<body{% if not authenticated %} class="d-flex flex-column"{% endif %}>
+{% if authenticated %}
+<div class="page">
+<header class="navbar navbar-expand-md d-print-none"><div class="container-xl">
+<button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar-menu" aria-controls="navbar-menu" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button>
+<h1 class="navbar-brand navbar-brand-autodark pe-0 pe-md-3"><a href="/">Reeve</a></h1>
+<div class="collapse navbar-collapse" id="navbar-menu"><ul class="navbar-nav">
+{% for href, label, icon_name, children in menu %}{% set ns = namespace(active=(current(href) == 'True')) %}{% for chref, clabel in children %}{% if path == chref or (chref != '/' and path.startswith(chref + '/')) %}{% set ns.active = true %}{% endif %}{% endfor %}{% set active = ns.active %}
+{% if children %}<li class="nav-item dropdown{% if active %} active{% endif %}"><a class="nav-link dropdown-toggle" href="#navbar-{{label|lower}}" data-bs-toggle="dropdown" data-bs-auto-close="outside" role="button" aria-expanded="false"><span class="nav-link-icon">{{ui.icon(icon_name)}}</span><span class="nav-link-title">{{label}}</span></a><div class="dropdown-menu">{% for chref, clabel in children %}<a class="dropdown-item{% if path == chref or (chref != '/' and path.startswith(chref + '/')) %} active{% endif %}" href="{{chref}}">{{clabel}}</a>{% endfor %}</div></li>
+{% else %}<li class="nav-item{% if active %} active{% endif %}"><a class="nav-link" href="{{href}}"{% if active %} aria-current="page"{% endif %}><span class="nav-link-icon">{{ui.icon(icon_name)}}</span><span class="nav-link-title">{{label}}</span></a></li>{% endif %}{% endfor %}
+</ul></div>
+<div class="navbar-nav flex-row order-md-last ms-auto"><form action="/logout" method="post" class="nav-item"><input type="hidden" name="csrf" value="{{ session.csrf }}"><button class="nav-link btn btn-link px-2">{{ui.icon('logout')}}<span class="nav-link-title ms-1">Sign out</span></button></form></div>
+</div></header>
+<div class="page-wrapper">
+<main class="page-body"><div class="container-xl">{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}{% block content %}{% endblock %}</div></main>
+<footer class="footer footer-transparent d-print-none"><div class="container-xl"><div class="row text-center align-items-center flex-row-reverse"><div class="col-12 col-lg-auto mt-3 mt-lg-0 text-secondary small">Reeve Panel{% if release %} · {{ release.version or release.current[:7] }}{% if release.modified %} (modified){% endif %}{% if release.previous %}, previous {{ release.previous_version or release.previous[:7] }}{% endif %}{% endif %}{% if hostname %} · on {{ hostname }}{% endif %}</div></div></div></footer>
+</div></div>
+{% else %}
+<div class="page page-center"><div class="container container-tight py-4">{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}{% block plain %}{% endblock %}</div></div>
+{% endif %}
+</body></html>

@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% block title %}Scheduled commands · {{site.name}}{% endblock %}{% block content %}
+{% extends 'legacy_base.html' %}{% block title %}Scheduled commands · {{site.name}}{% endblock %}{% block content %}
 <a class="breadcrumb" href="/sites/{{site.name}}">← {{site.name}}</a><h1>Scheduled commands</h1>{% include 'site_nav.html' %}
 <p>Run commands for {{site.name}} without waiting for page visits. Each run uses the site's identity, files, PHP and database settings.</p>
 <p>Schedules wait while another operation or SSH toolbox uses this site. Missed intervals become one run; they do not build a queue. Failed runs pause the schedule for review. The worker must be running, and a busy worker can delay execution.</p>

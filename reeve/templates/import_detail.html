@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% block title %}{{result.input.name}} · Project review{% endblock %}{% block content %}
+{% extends 'legacy_base.html' %}{% block title %}{{result.input.name}} · Project review{% endblock %}{% block content %}
 <a href="/imports">← Import application</a><h1>{{result.input.name}}</h1>
 <p><strong>{{'Needs preparation' if result.state == 'needs_preparation' else 'Package reviewed'}}</strong> · Received {{result.created|timestamp}}</p>
 {% if error %}<p class="error">{{error}}</p>{% endif %}

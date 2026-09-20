@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% block title %}SSH toolbox · {{site.name}}{% endblock %}{% block content %}
+{% extends 'legacy_base.html' %}{% block title %}SSH toolbox · {{site.name}}{% endblock %}{% block content %}
 <a class="breadcrumb" href="/sites/{{site.name}}">← {{site.name}}</a><h1>SSH toolbox</h1>{% include 'site_nav.html' %}<p>Build a reusable tools image, then open a normal shell for {{site.name}}. Site files are at <code>/site</code>; the private database and application environment are available. Nothing here changes the site's web image.</p>
 <p>PHP toolboxes include WP-CLI and Composer. From your WordPress directory, run <code>wp core update</code> or <code>wp plugin update --all</code>; enable outgoing connections for downloads.</p>
 <section class="card" id="content-jobs" data-status-url="/sites/{{site.name}}/content/status" data-pending="{{'yes' if jobs and jobs[0].state in ['queued','running'] else 'no'}}"><h2>Toolbox status</h2>

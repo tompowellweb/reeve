@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% block title %}Mail · Reeve{% endblock %}{% block content %}
+{% extends 'legacy_base.html' %}{% block title %}Mail · Reeve{% endblock %}{% block content %}
 <div class="site-overview"><a class="breadcrumb" href="/">← Sites</a><div class="heading"><div><h1>Mail</h1><p class="muted">Outbound mail for every PHP site: the relay, its queue and who is sending.</p></div></div>
 {% if mail.error %}<div class="error" role="alert">{{mail.error}}</div>{% endif %}
 <section class="card"><h2>Relay</h2>

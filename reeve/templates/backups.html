@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% block title %}Backups · {{site.name}}{% endblock %}{% block content %}
+{% extends 'legacy_base.html' %}{% block title %}Backups · {{site.name}}{% endblock %}{% block content %}
 <a class="breadcrumb" href="/sites/{{site.name}}">← {{site.name}}</a><h1>Backups</h1>{% include 'site_nav.html' %}
 {% macro when(value) %}<time data-timestamp="{{value}}">{{value|timestamp}}</time>{% endmacro %}
 {% macro mib(value) %}{{(value / 1048576)|round(1)}} MiB{% endmacro %}

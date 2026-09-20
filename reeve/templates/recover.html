@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% block title %}Recover · Reeve{% endblock %}{% block content %}
+{% extends 'legacy_base.html' %}{% block title %}Recover · Reeve{% endblock %}{% block content %}
 {% set names = {} %}{% for d in status.destinations %}{% set _ = names.update({'repository:' ~ d.id: d.name}) %}{% endfor %}
 {% macro where(source) %}{% if source == 'local' %}here{% elif source.startswith('repository:') %}{{names.get(source, 'a repository')}}{% else %}folder{% endif %}{% endmacro %}
 {% macro copies(b) %}{% if b.copies %}{% for c in b.copies %} · {% if c.state == 'verified' %}in {{c.name}}{% elif c.state == 'forgotten' %}forgotten in {{c.name}}{% else %}<span class="danger-text">not yet in {{c.name}}</span>{% endif %}{% endfor %}{% endif %}{% endmacro %}

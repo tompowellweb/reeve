@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% block title %}Settings · Reeve{% endblock %}{% block content %}
+{% extends 'legacy_base.html' %}{% block title %}Settings · Reeve{% endblock %}{% block content %}
 <a class="breadcrumb" href="/">← Sites</a><div class="heading"><div><h1>Server settings</h1><p class="muted">What this server does for every site. Each Save applies at once and says what it did.</p></div></div>
 {% if error %}<p class="error">{{error}}</p>{% endif %}
 {% if saved %}<p class="notice">Saved {{titles.get(saved, saved)}}.{% if note %} {{note}}{% endif %}</p>{% endif %}

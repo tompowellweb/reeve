@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% block title %}Logs · {{site.name}}{% endblock %}{% block content %}
+{% extends 'legacy_base.html' %}{% block title %}Logs · {{site.name}}{% endblock %}{% block content %}
 <a class="breadcrumb" href="/sites/{{site.name}}">← {{site.name}}</a><h1>Logs</h1>{% include 'site_nav.html' %}
 <p>What this site's containers and the edge wrote, newest last. PHP errors go to the PHP container's output (the pages themselves show none); nginx's own errors and its access lines to the web server's; every request that reached the edge, with its status and time, to the edge access log for each of the site's hostnames.</p>
 {% if error %}<p class="error">{{error}}</p>{% endif %}

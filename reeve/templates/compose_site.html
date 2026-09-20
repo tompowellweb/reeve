@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% block title %}{{site.name}} · Reeve{% endblock %}{% block content %}
+{% extends 'legacy_base.html' %}{% block title %}{{site.name}} · Reeve{% endblock %}{% block content %}
 <a class="breadcrumb" href="/">← Sites</a>
 <div id="operation" data-state="{{site.state}}" class="heading site-heading"><div><div class="title-line"><h1>{{site.name}}</h1><span class="badge">Compose</span><span class="badge {{'good' if site.health.application == 'healthy' else 'warn'}}">{{site.health.application}}</span></div><p>{{project.project_name}} · {{site.state}} · {{site.step}}</p></div>{% if site.state == 'succeeded' %}<a class="secondary" href="https://{{site.domain}}" target="_blank" rel="noopener">Open site ↗</a>{% endif %}</div>
 {% if site.error %}<p class="error">{{site.error}}</p>{% endif %}

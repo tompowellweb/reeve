@@ -385,7 +385,7 @@ def test_home_shows_the_server_summary_and_survives_a_busy_worker(tmp_path):
     client = TestClient(create_app(tmp_path / "auth.db", call, status_path=status))
     page = login(client)
     for text in ("Figures as of 22:13 UTC", "1.78", "load, 4 cores", "6.0 GiB", "used of 16.0 GiB", "138 GiB", "6.5 GiB reclaimable", "SFTP destination", "2 pending",
-                 "1</strong><span>queued · sink mode", "last hour 3 sent", "1</strong><span>site on", "200 MiB", "of 1.0 GiB", "19.1 MiB", "50%"):
+                 "queued · sink mode", "last hour 3 sent", "site on", "200 MiB", "of 1.0 GiB", "19.1 MiB", "50%"):
         assert text in page.text, text
     assert "queued" in page.text  # the live state from the worker
     with ledger.db() as db:
@@ -413,18 +413,24 @@ def test_header_navigation_marks_the_section_and_the_footer_names_the_release(tm
     (tmp_path / "status.json").write_text(json.dumps({"at": 1.0, "errors": {}, "hostname": "hosting", "sites": []}))
     client = TestClient(create_app(tmp_path / "auth.db", lambda m: dispatch(m, ledger, host), status_path=tmp_path / "status.json", release_path=tmp_path / "release.json"))
     page = client.get("/login")
-    assert "<title>Sign in · Reeve</title>" in page.text and 'class="top-nav"' not in page.text  # no sections before signing in
+    assert "<title>Sign in · Reeve</title>" in page.text and 'id="navbar-menu"' not in page.text  # no sections before signing in
     page = login(client)
-    assert 'class="brand" href="/">Reeve <span>Panel</span>' in page.text and 'href="/" aria-current="page">Sites' in page.text and 'href="/mail">Mail' in page.text
+    assert 'class="navbar-brand navbar-brand-autodark pe-0 pe-md-3"><a href="/">Reeve</a>' in page.text and 'href="/" aria-current="page"' in page.text and 'href="/mail">Mail' in page.text
     assert "Reeve Panel · 7e4a3c7, previous f9fde5d · on hosting" in page.text and "Backup destination</a> · " not in page.text
-    assert '<p class="eyebrow">hosting</p>' in page.text
-    for path, label in (("/sites/shop", "Sites"), ("/mail", "Mail"), ("/backups", "Backups"), ("/versions", "PHP"), ("/databases/versions", "Databases"), ("/history", "History")):
+    assert '<div class="page-pretitle">hosting</div>' in page.text
+    # One top-level entry is active per page: the section itself, or the group that holds the page.
+    for path, label, old_label in (("/sites/shop", "Sites", "Sites"), ("/mail", "Server", "Mail"), ("/backups", "Backups", "Backups"), ("/versions", "Server", "PHP"), ("/databases/versions", "Server", "Databases"), ("/history", "Backups", "History"), ("/settings", "Settings", "Settings")):
         text = client.get(path).text
-        nav = text[text.index('class="top-nav"'):text.index('</nav>')]
-        assert nav.count('aria-current="page"') == 1 and f'aria-current="page">{label}<' in nav, path
+        if 'id="navbar-menu"' in text:
+            nav = text[text.index('id="navbar-menu"'):text.index('</ul></div>')]
+            active = re.findall(r'<li class="nav-item(?: dropdown)? active">.*?<span class="nav-link-title">([^<]+)</span>', nav)
+            assert active == [label], (path, active)
+        else:   # a page still on the legacy frame, until the UI refresh reaches it
+            nav = text[text.index('class="top-nav"'):text.index('</nav>')]
+            assert nav.count('aria-current="page"') == 1 and f'aria-current="page">{old_label}<' in nav, path
     bare = TestClient(create_app(tmp_path / "auth.db", lambda m: dispatch(m, ledger, host), status_path=tmp_path / "none.json", release_path=tmp_path / "no-release.json"))
     login(bare)
-    assert "<footer>Reeve Panel</footer>" in bare.get("/").text
+    assert 'small">Reeve Panel</div>' in bare.get("/").text
 
 
 def test_create_form_offers_mariadb_first_with_the_profile_usage_and_the_site_page_changes_usage(setup, tmp_path, monkeypatch):

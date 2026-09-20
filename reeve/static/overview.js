@@ -30,7 +30,7 @@ for (const element of document.querySelectorAll('time[data-timestamp]')) {
 // Keep scheduled state fresh without discarding an open editor or expanded details.
 if (document.querySelector('.site-overview')) {
   window.setInterval(() => {
-    if (!document.hidden && !document.querySelector('dialog[open], details[open], form:focus-within, [data-concern-panel]:not([hidden])')) window.location.reload();
+    if (!document.hidden && !document.querySelector('dialog[open], .modal.show, details[open], form:focus-within, [data-concern-panel]:not([hidden])')) window.location.reload();
   }, 30000);
 }
 // A form that says what it is about to do asks once before doing it.

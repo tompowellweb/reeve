@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% block title %}Agent access · Reeve{% endblock %}{% block content %}
+{% extends 'legacy_base.html' %}{% block title %}Agent access · Reeve{% endblock %}{% block content %}
 <a href="/imports">← Import application</a><h1>Agent access</h1><p>Tokens can read preparation instructions, upload projects and read their own review results. They cannot deploy applications or change existing sites.</p>
 {% if token %}<section class="card"><h2>New token</h2><p>Copy this token now. It will not be shown again.</p><input aria-label="New agent token" readonly value="{{token}}" autocomplete="off" spellcheck="false"></section>{% endif %}
 <form class="card narrow" method="post" action="/agent-access"><input type="hidden" name="csrf" value="{{session.csrf}}"><label>Name<input name="name" required maxlength="60" placeholder="Demo preparation"></label><p>Expires after 30 days.</p><button>Create token</button></form>

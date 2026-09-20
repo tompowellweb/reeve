@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% block title %}Deleted sites · Reeve{% endblock %}{% block content %}
+{% extends 'legacy_base.html' %}{% block title %}Deleted sites · Reeve{% endblock %}{% block content %}
 <a class="breadcrumb" href="/">← Sites</a><h1>Deleted sites</h1>
 {% macro when(value) %}<time data-timestamp="{{value}}">{{value|timestamp}}</time>{% endmacro %}
 <p>Every deletion kept a final complete backup. A deleted site can be restored into a new site from that backup; its old name and hostname are free to reuse if nothing else took them.</p>
