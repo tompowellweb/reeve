@@ -29,7 +29,11 @@ written whenever something changes and copied with the backups.
 3. On **Recover**, scan a repository (the source list names each destination). It lists the sites found, each with its complete
    backups and database dumps by time, and the server record. Apply the recorded settings,
    tick the sites, keep or change their names and hostnames, and press **Restore the selected
-   sites**. Restores run one after another; the page shows each step.
+   sites**. Restores run one after another, in the order you chose; the page shows each step.
+   Downloading runs beside them, one backup at a time and always a step ahead, so the link to the
+   repository is never idle while a site is being put back. A site shown as `fetched` is here and
+   waiting its turn. The PHP versions the chosen sites need are built while the first download
+   runs, rather than one at a time in the middle of the queue.
 4. Check the sites through the new server, point DNS at it, then resume uploads on **Backups**.
 
 The same from the command line:

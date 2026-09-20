@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -26,7 +27,8 @@ REQUEST = OPS / 'panel/worker/recovery-scan-request.json'
 MANIFESTS = OPS / 'panel/worker/recovery-manifests'
 FETCH = BACKUPS / 'staging/restore-fetch'
 MODES = ('new', 'files', 'database', 'both', 'dump')
-STATES = ('queued', 'fetching', 'restoring', 'waiting', 'hostnames', 'succeeded', 'failed', 'recovery-needed')
+STATES = ('queued', 'fetching', 'fetched', 'restoring', 'waiting', 'hostnames', 'succeeded', 'failed', 'recovery-needed')
+BUILDING = 3   # at most this many runtime images are built beside the queue at once
 ACTIONS = ('download', 'delete')
 ACTION_STATES = ('queued', 'running', 'succeeded', 'failed')
 
@@ -373,6 +375,7 @@ def retry(ledger, ident):
 
 def recover(ledger):
     """Startup: a recovery interrupted while fetching or handing over needs a look; one that was only waiting resumes."""
+    shutil.rmtree(FETCH, ignore_errors=True)   # a part-downloaded artifact is no use; its recovery is retried whole
     with ledger.db() as db:
         db.execute("UPDATE recoveries SET state='recovery-needed', error='The worker stopped during this step', updated=? WHERE state IN ('fetching','restoring')", (time.time(),))
         db.execute("UPDATE backup_actions SET state='failed', error='The worker stopped during this action; queue it again', updated=? WHERE state='running'", (time.time(),))
@@ -400,17 +403,20 @@ def fetch(row):
         from . import remote_backup as remote
         config = remote.destination(row['source'][len('repository:'):])
         if not row['snapshot']: raise ValueError('The scan did not record a snapshot for this backup')
-        shutil.rmtree(FETCH, ignore_errors=True); FETCH.mkdir(mode=0o700, parents=True)
+        # Its own scratch folder, named by the artifact it is for: a recovery's download lane and an operator's
+        # Manage-mode download can be in flight at the same time, and neither may clear the other's work.
+        scratch = FETCH / row['backup_id']
+        shutil.rmtree(scratch, ignore_errors=True); scratch.mkdir(mode=0o700, parents=True)
         args, env = remote.command(config)
-        subprocess.run([*args, 'restore', row['snapshot'], '--target', str(FETCH), '--verify'], env=env, check=True,
+        subprocess.run([*args, 'restore', row['snapshot'], '--target', str(scratch), '--verify'], env=env, check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3600)
-        fetched = FETCH / str(target).lstrip('/')
+        fetched = scratch / str(target).lstrip('/')
         if not fetched.is_dir():
             # The artifact may have lived under another backup root on the old server: find it by its manifest.
-            fetched = next((p.parent for p in FETCH.rglob('manifest.json') if p.parent.name == row['backup_id']), None)
+            fetched = next((p.parent for p in scratch.rglob('manifest.json') if p.parent.name == row['backup_id']), None)
             if not fetched: raise ValueError('The snapshot does not contain the backup folder')
         fetched.rename(target)
-        shutil.rmtree(FETCH, ignore_errors=True)
+        shutil.rmtree(scratch, ignore_errors=True)
         return 'fetched from the repository'
     raise ValueError('This backup is not on this server any more; scan again')
 
@@ -420,11 +426,12 @@ def perform(ledger, host, row):
     ident = row['id']; mode = row['mode']
     try:
         if row['state'] == 'queued':
+            # Only without a download lane (the command line, a test). The worker hands this to the lane instead.
             update(ledger, ident, 'fetching', 'fetching the backup')
             how = fetch(row)
-            update(ledger, ident, 'restoring', how)
+            update(ledger, ident, 'fetched', how)
             return
-        if row['state'] == 'restoring':
+        if row['state'] in ('fetched', 'restoring'):   # `restoring` is how a release before 1.8.0 named this step
             if mode == 'new':
                 domains = json.loads(row['domains'])
                 site = sites.restore(ledger, host, row['backup_id'], row['name'], domains[0])
@@ -478,10 +485,84 @@ def perform(ledger, host, row):
         update(ledger, ident, 'failed', row['step'], str(exc))
 
 
-def tick(ledger, host):
-    """The worker's pass: a requested scan, one step of the oldest unfinished recovery, then one backup action."""
+def download_lane(ledger, pending, lanes, spawn=None):
+    """One download at a time, in the order the operator chose, never waiting for a restore to finish.
+
+    The repository link is the bottleneck and a second stream would only halve both, so downloads stay serial.
+    But holding the next download until the current site has finished restoring leaves the link idle for the
+    whole length of that restore, which is pure loss: the artifacts stay in staging after a recovery anyway,
+    so fetching one sooner costs nothing that is not already spent.
+    """
+    lane = lanes.setdefault('fetch', {'thread': None})
+    if lane['thread'] is not None and lane['thread'].is_alive(): return None
+    row = next((r for r in pending if r['state'] == 'queued'), None)
+    if not row: return None
+    update(ledger, row['id'], 'fetching', 'fetching the backup')
+    def work():
+        try: update(ledger, row['id'], 'fetched', fetch(row) + '; waiting its turn')
+        except Exception as exc: update(ledger, row['id'], 'failed', 'fetching the backup', str(exc))
+    if spawn: spawn(work)
+    else:
+        lane['thread'] = threading.Thread(target=work, daemon=True, name='recovery-fetch'); lane['thread'].start()
+    return row['id']
+
+
+def runtime_branches(pending):
+    """Pure: the PHP branches the queued recoveries will need, read from the manifests the scan already cached.
+
+    A backup the scan described by its tags alone has no cached manifest; that site simply builds its runtime
+    the old way, inside its own restore.
+    """
+    wanted = []
+    for row in pending:
+        if row['mode'] != 'new': continue
+        managed = (cached_manifest(row['backup_id']) or {}).get('managed') or {}
+        payload = managed.get('payload') or {}
+        if (payload.get('runtime') or managed.get('runtime')) != 'php': continue
+        branch = managed.get('php_branch') or payload.get('php_version')
+        if branch and branch not in wanted: wanted.append(branch)
+    return wanted
+
+
+def prebuild_runtimes(pending, lanes, spawn=None):
+    """Build the PHP runtimes this queue will need beside it, while the first download runs.
+
+    These are the same images the restores would build anyway, one at a time and in the middle of the queue,
+    so this costs no disk that was not already going to be spent; it only takes the minute a branch takes off
+    the critical path. Building is mostly one core and the repository link is busy elsewhere, so it is close to
+    free. A failure here is never a recovery's failure: the site's own `ensure` will try again and report it.
+    """
+    from . import php_runtime
+    lane = lanes.setdefault('runtimes', {})
+    for branch in [b for b, thread in lane.items() if not thread.is_alive()]: lane.pop(branch)
+    try: built = set(php_runtime.catalog())
+    except (OSError, ValueError, RuntimeError): return []
+    started = []
+    for branch in runtime_branches(pending):
+        if branch in built or branch in lane or len(lane) >= BUILDING: continue
+        def work(branch=branch):
+            try: php_runtime.build([branch])
+            except Exception as exc: print('preparing the PHP ' + branch + ' runtime ahead of its restore failed, '
+                                           'and is left to the restore itself: ' + str(exc)[:200], flush=True)
+        if spawn: spawn(work)
+        else:
+            lane[branch] = threading.Thread(target=work, daemon=True, name='recovery-runtime-' + branch); lane[branch].start()
+        started.append(branch)
+    return started
+
+
+def tick(ledger, host, lanes=None, spawn=None):
+    """The worker's pass: a requested scan, the download and runtime lanes, one step of the oldest recovery
+    that has its artifact, then one backup action."""
     perform_scan(ledger)
     pending = recoveries(ledger, active=True)
+    if lanes is not None:
+        if pending:
+            prebuild_runtimes(pending, lanes, spawn)
+            download_lane(ledger, pending, lanes, spawn)
+        # Downloading belongs to the lane. The serial worker takes the oldest recovery whose artifact is already
+        # here, so the restores still run one at a time and in the order the operator chose.
+        pending = [r for r in recoveries(ledger, active=True) if r['state'] not in ('queued', 'fetching')]
     if pending: perform(ledger, host, pending[0])
     waiting = actions(ledger, active=True)
     if waiting: perform_action(ledger, waiting[0])

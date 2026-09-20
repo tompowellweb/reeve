@@ -101,7 +101,7 @@ def test_a_recovery_steps_through_fetch_restore_wait_and_hostnames(world, monkey
     monkeypatch.setattr(rs.sites, 'restore', fake_restore)
     host = SimpleNamespace()
     def step(): rs.perform(ledger, host, rs.recoveries(ledger, active=True)[0]); return rs.recoveries(ledger)[0]
-    assert step()['state'] == 'restoring'
+    assert step()['state'] == 'fetched'
     assert step()['state'] == 'waiting' and rs.recoveries(ledger)[0]['child'] == created['id']
     assert step()['state'] == 'waiting'  # the site is still being created
     ledger.update(created['id'], 'succeeded', 'published')
@@ -285,4 +285,72 @@ def test_a_compose_site_finishes_its_recovery_and_does_not_hold_up_the_queue(wor
     assert step()[first]['state'] == 'succeeded'        # and now it finishes, with no restore job in sight
     # The next site in the queue is reached rather than stranded behind it.
     assert rs.recoveries(ledger, active=True)[0]['id'] == second
-    step(); assert {r['id']: r for r in rs.recoveries(ledger)}[second]['state'] in ('restoring', 'waiting')
+    step(); assert {r['id']: r for r in rs.recoveries(ledger)}[second]['state'] in ('fetched', 'waiting')
+
+
+def test_downloads_run_beside_the_restores_and_keep_the_operators_order(world, monkeypatch):
+    """The repository link is the bottleneck, so downloads stay serial; but they no longer wait for the
+    restore in front of them, which used to leave the link idle for the whole length of every restore."""
+    ledger, live, scan = world
+    shop_backup = scan['sites'][0]['backups'][0]['id']; blog_backup = scan['sites'][1]['backups'][0]['id']
+    first, second = rs.submit(ledger, [{'backup': blog_backup, 'mode': 'new', 'name': 'blog', 'domains': 'blog.example'},
+                                       {'backup': shop_backup, 'mode': 'files', 'target': 'shop'}])
+    fetched = []
+    monkeypatch.setattr(rs, 'fetch', lambda row: fetched.append(row['id']) or 'fetched from the repository')
+    monkeypatch.setattr(rs, 'perform_scan', lambda ledger_: False)
+    monkeypatch.setattr(rs.sites, 'restore', lambda *a: (_ for _ in ()).throw(AssertionError('not reached')))
+    lanes = {}; host = SimpleNamespace()
+    def tick(): rs.tick(ledger, host, lanes, spawn=lambda work: work())
+    # `perform` is stubbed to do nothing, so the first recovery never finishes restoring.
+    inflight = []
+    monkeypatch.setattr(rs, 'perform', lambda ledger_, host_, row: inflight.append(row['id']))
+    tick(); assert fetched == [first] and inflight == [first]      # the operator's first pick downloads first
+    tick(); assert fetched == [first, second]                      # and the second follows without waiting for that restore
+    tick(); assert fetched == [first, second]                      # one download at a time: there is no third
+    assert [r['state'] for r in rs.recoveries(ledger, active=True)] == ['fetched', 'fetched']
+    assert inflight == [first, first, first]                       # while the restores stay serial and in order
+    assert 'waiting its turn' in {r['id']: r for r in rs.recoveries(ledger)}[second]['step']
+
+
+def test_a_download_failure_belongs_to_its_own_recovery(world, monkeypatch):
+    ledger, live, scan = world
+    [rid] = rs.submit(ledger, [{'backup': scan['sites'][1]['backups'][0]['id'], 'mode': 'new', 'name': 'blog', 'domains': 'blog.example'}])
+    monkeypatch.setattr(rs, 'fetch', lambda row: (_ for _ in ()).throw(ValueError('the snapshot is gone')))
+    assert rs.download_lane(ledger, rs.recoveries(ledger, active=True), {}, spawn=lambda work: work()) == rid
+    row = rs.recoveries(ledger)[0]
+    assert row['state'] == 'failed' and 'snapshot is gone' in row['error']
+
+
+def test_the_runtimes_the_queue_needs_are_built_beside_it(world, monkeypatch):
+    """A restore used to build its PHP runtime inline, one branch at a time in the middle of the queue: a
+    minute a branch on the critical path. The branches are named in the manifests the scan already read, so
+    they are built beside the downloads instead. They are the same images, so no more disk is spent."""
+    ledger, live, scan = world
+    blog_backup = scan['sites'][1]['backups'][0]['id']; shop_backup = scan['sites'][0]['backups'][0]['id']
+    rs.remember_manifest(blog_backup, {**SITE_MANIFEST, 'operation': blog_backup,
+                                       'managed': {'runtime': 'php', 'php_branch': '7.0', 'payload': {'runtime': 'php', 'php_version': '8.4'}}})
+    rs.remember_manifest(shop_backup, {**SITE_MANIFEST, 'operation': shop_backup,
+                                       'managed': {'runtime': 'php', 'payload': {'runtime': 'php', 'php_version': '8.3'}}})
+    rs.submit(ledger, [{'backup': blog_backup, 'mode': 'new', 'name': 'blog', 'domains': 'blog.example'},
+                       {'backup': shop_backup, 'mode': 'new', 'name': 'later', 'domains': 'later.example'}])
+    pending = rs.recoveries(ledger, active=True)
+    # The pinned branch wins over the payload's version, exactly as the restore itself chooses it.
+    assert rs.runtime_branches(pending) == ['7.0', '8.3']
+    built, asked = {'8.3': {}}, []
+    import reeve.php_runtime as php_runtime
+    monkeypatch.setattr(php_runtime, 'catalog', lambda: built)
+    monkeypatch.setattr(php_runtime, 'build', lambda branches: asked.extend(branches))
+    # Only the branch that is missing, and a branch already in the catalogue is left alone.
+    assert rs.prebuild_runtimes(pending, {}, spawn=lambda work: work()) == ['7.0'] and asked == ['7.0']
+    # A branch already in flight is not started twice, and no more than BUILDING run at once.
+    alive = SimpleNamespace(is_alive=lambda: True)
+    assert rs.prebuild_runtimes(pending, {'runtimes': {'7.0': alive}}, spawn=lambda work: work()) == []
+    assert rs.prebuild_runtimes(pending, {'runtimes': {b: alive for b in ('a', 'b', 'c')}}, spawn=lambda work: work()) == []
+    # A backup the scan described by its tags alone has no manifest: that site builds its runtime the old way.
+    rs.manifest_cache(blog_backup).unlink(); rs.manifest_cache(shop_backup).unlink()
+    assert rs.runtime_branches(rs.recoveries(ledger, active=True)) == []
+    # Preparing a runtime ahead of time never fails a recovery: the restore's own ensure() reports it instead.
+    monkeypatch.setattr(php_runtime, 'build', lambda branches: (_ for _ in ()).throw(RuntimeError('Surý is unreachable')))
+    rs.remember_manifest(blog_backup, {**SITE_MANIFEST, 'operation': blog_backup, 'managed': {'runtime': 'php', 'payload': {'runtime': 'php', 'php_version': '7.0'}}})
+    assert rs.prebuild_runtimes(rs.recoveries(ledger, active=True), {}, spawn=lambda work: work()) == ['7.0']
+    assert [r['state'] for r in rs.recoveries(ledger, active=True)] == ['queued', 'queued']

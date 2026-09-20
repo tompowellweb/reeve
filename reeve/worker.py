@@ -475,6 +475,9 @@ def run():
     startup_recovery(ledger, host)
 
     builder = {'thread': None}
+    # Beside the serial worker: the mode 2 package build lane above, and the recovery's own download and
+    # runtime-build lanes. Each is one thread at a time and touches only its own artifact.
+    lanes = {}
 
     def process():
         next_catalogue_check = 0
@@ -661,7 +664,7 @@ def run():
                 from .site_backup import perform_restore
                 perform_restore(ledger, host, job)
             from .restoration import tick as recovery_tick
-            recovery_tick(ledger, host)
+            recovery_tick(ledger, host, lanes)
             if time.time() - last_secure_tick > 20:
                 last_secure_tick = time.time()
                 try:

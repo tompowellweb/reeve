@@ -61,9 +61,9 @@
 {% endcall %}
 {% endif %}
 {% endif %}
-<div id="progress" data-state="{{'running' if status.recoveries|selectattr('state', 'in', ['queued', 'fetching', 'restoring', 'waiting', 'hostnames'])|list else 'idle'}}">{% call ui.section('Recoveries', flush=true) %}
+<div id="progress" data-state="{{'running' if status.recoveries|selectattr('state', 'in', ['queued', 'fetching', 'fetched', 'restoring', 'waiting', 'hostnames'])|list else 'idle'}}">{% call ui.section('Recoveries', flush=true) %}
 {% if status.recoveries %}<div class="list-group list-group-flush">
-{% for r in status.recoveries %}{% set detail %}{{ {'new': 'as a new site ' ~ r.name, 'files': 'files into the live site', 'database': 'database into the live site', 'both': 'files and database into the live site', 'dump': 'database from a dump'}[r.mode] }} · {{r.step}} · {{ ui.time(r.updated) }}{% if r.error %}<div class="text-danger">{{r.error}}</div>{% endif %}{% endset %}{% set badge = ui.state(r.state, 'ok' if r.state == 'succeeded' else 'bad' if r.state in ('failed', 'recovery-needed') else 'warn' if r.state in ('queued', 'waiting') else 'info') %}
+{% for r in status.recoveries %}{% set detail %}{{ {'new': 'as a new site ' ~ r.name, 'files': 'files into the live site', 'database': 'database into the live site', 'both': 'files and database into the live site', 'dump': 'database from a dump'}[r.mode] }} · {{r.step}} · {{ ui.time(r.updated) }}{% if r.error %}<div class="text-danger">{{r.error}}</div>{% endif %}{% endset %}{% set badge = ui.state(r.state, 'ok' if r.state == 'succeeded' else 'bad' if r.state in ('failed', 'recovery-needed') else 'warn' if r.state in ('queued', 'fetched', 'waiting') else 'info') %}
 {% if r.state in ('failed', 'recovery-needed') %}{% call ui.row(r.site_name or r.backup_id[:8], detail, badge) %}<form method="post" action="/recover/retry/{{r.id}}"><input type="hidden" name="csrf" value="{{session.csrf}}"><button class="btn btn-ghost-secondary btn-sm">Retry</button></form>{% endcall %}{% else %}{{ ui.row(r.site_name or r.backup_id[:8], detail, badge) }}{% endif %}
 {% endfor %}</div>
 {% else %}{{ ui.empty('No recoveries yet.') }}{% endif %}
