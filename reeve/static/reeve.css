@@ -1,5 +1,68 @@
 /* What Tabler has no word for. Everything else is Tabler's own classes through the macros in templates/ui.html. */
 
+/* ---- The palette, written plainly.
+
+   Tabler 1.5 builds almost every colour from two recent CSS functions: `light-dark()` for surfaces,
+   borders and text (seventy times) and `color-mix()` for tints and hover states. Both are accepted
+   while a stylesheet is parsed, because their values contain `var()`, and only found invalid when
+   the value is computed; an invalid computed value leaves the property unset, which for a background
+   or a border is transparent. On a browser older than those functions the panel therefore loses its
+   card surfaces, its borders and its tints all at once and reads as a blank white page, with no
+   fallback, since the declarations have already won the cascade.
+
+   Reeve does not ship a dark theme, so the light values are pinned here as literals: the same
+   colours Tabler resolves to, in a form every browser understands. The accent is Reeve's own green,
+   the colour the panel used before it moved to Tabler, rather than the stock blue. */
+
+:root{
+  /* surfaces, borders and text: Tabler's light theme */
+  --tblr-body-bg:#f9fafb;
+  --tblr-bg-surface:#fff;
+  --tblr-bg-surface-primary:#fff;
+  --tblr-bg-surface-secondary:#f9fafb;
+  --tblr-bg-surface-tertiary:#f3f4f6;
+  --tblr-bg-forms:#fff;
+  --tblr-border-color:#e5e7eb;
+  --tblr-border-color-translucent:#e5e7eb;
+  --tblr-body-color:#374151;
+  --tblr-secondary:#6b7280;
+  --tblr-muted:#6b7280;
+  --tblr-disabled-color:#9ca3af;
+  --tblr-active-bg:#f4f8f6;
+  /* Reeve's green, and the shades Tabler derives from the accent */
+  --tblr-primary:#176b52;
+  --tblr-primary-rgb:23,107,82;
+  --tblr-primary-fg:#fff;
+  --tblr-primary-darken:#12553f;
+  --tblr-primary-lt:#e8f1ed;
+  --tblr-link-color:#176b52;
+  --tblr-link-color-rgb:23,107,82;
+  --tblr-link-hover-color:#12553f;
+}
+
+/* Tabler writes the resolved link blue straight into `.btn-link` and builds `a` from the link
+   colour's own rgb triple, so both need saying again for the accent above to reach them. */
+a{color:var(--tblr-link-color)}
+a:hover,a:focus{color:var(--tblr-link-hover-color)}
+.btn-link{color:var(--tblr-link-color)}
+.btn-link:hover,.btn-link:focus-visible{color:var(--tblr-link-hover-color)}
+
+/* The bar across the top: a pastel of the accent, so the page has a colour of its own and the
+   cards below it read as raised rather than as part of one white sheet. */
+.navbar{
+  --tblr-navbar-bg:#e7f1ec;
+  --tblr-navbar-border-color:#c9ded4;
+  --tblr-navbar-active-bg:#d6e8e0;
+  --tblr-navbar-active-border-color:#176b52;
+}
+
+/* The tints behind a state badge, for the same reason as the palette above. */
+.bg-green-lt{color:#2fb344!important;background-color:#eaf7ec!important}
+.bg-yellow-lt{color:#c08c00!important;background-color:#fef5e6!important}
+.bg-red-lt{color:#d63939!important;background-color:#fbebeb!important}
+.bg-blue-lt{color:#066fd1!important;background-color:#e6f1fa!important}
+.bg-secondary-lt{color:#6b7280!important;background-color:#f0f1f2!important}
+
 /* Tabler's own layout puts the page header above the body and every card in a `row-cards` grid, so the
    header's gap below it and a card's gap from the next come from the grid. Reeve's pages put the header
    inside the body and stack most cards straight down the page, so those two gaps are set here, to the same
