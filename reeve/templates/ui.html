@@ -62,9 +62,11 @@
 {%- endmacro %}
 
 {# components/progress: a quantity against its limit. Tabler's own height, not `progress-sm`: a quarter
-   of a rem under a large figure reads as nothing at all. #}
+   of a rem under a large figure reads as nothing at all. The colour is set through the bar's own custom
+   property rather than a `bg-*` class: those are built with `color-mix()`, and a browser without it drops
+   the whole declaration, leaving a bar with no fill at all on a grey track. #}
 {% macro progress(value, tone='info', label='') -%}
-<div class="progress"><div class="progress-bar bg-{{TONES.get(tone, tone)}}" style="width: {{[0, [100, value|int]|min]|max}}%" role="progressbar" aria-valuenow="{{value|int}}" aria-valuemin="0" aria-valuemax="100"{% if label %} aria-label="{{label}}"{% endif %}></div></div>
+<div class="progress"><div class="progress-bar" style="width: {{[0, [100, value|int]|min]|max}}%; --tblr-progress-bar-bg: var(--tblr-{{TONES.get(tone, tone)}})" role="progressbar" aria-valuenow="{{value|int}}" aria-valuemin="0" aria-valuemax="100"{% if label %} aria-label="{{label}}"{% endif %}></div></div>
 {%- endmacro %}
 
 {# layout/navs-tabs: items is a list of (href, label); current is the active href #}
