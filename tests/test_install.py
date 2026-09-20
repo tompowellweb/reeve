@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -163,3 +164,12 @@ def test_the_forward_command_names_the_installing_account_and_the_servers_addres
     monkeypatch.setattr(installer, 'run', lambda *a: (_ for _ in ()).throw(subprocess.CalledProcessError(2, 'ip')))
     monkeypatch.setattr(installer.socket, 'gethostname', lambda: 'server')
     assert installer.server_address() == 'server'  # no default route: the hostname stands in
+
+
+def test_the_install_guide_names_the_release_this_tree_is():
+    """The guide's example pins a tag, and someone reading it installs that tag. Two releases went out with
+    the previous one still written in it, so the release number is checked here and not remembered."""
+    root = Path(__file__).resolve().parent.parent
+    version = re.search(r'^version = "([^"]+)"', (root / 'pyproject.toml').read_text(), re.M).group(1)
+    named = set(re.findall(r'\bv(\d+\.\d+\.\d+)\b', (root / 'docs/install.md').read_text()))
+    assert named == {version}, f"docs/install.md names {sorted(named) or 'no release'}; this tree is {version}"
