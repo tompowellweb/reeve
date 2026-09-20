@@ -392,7 +392,7 @@ def test_home_shows_the_server_summary_and_survives_a_busy_worker(tmp_path):
         import time
         db.execute('INSERT INTO traffic VALUES (?,?,?,?,?,?,?,?)', (row['id'], int(time.time() // 3600) * 3600, 1234, 5 * 1024 ** 2, 1200, 30, 4, 2))
     detail = client.get("/sites/shop")
-    assert "Traffic" in detail.text and "Last 24 hours" in detail.text and "Last 30 days" in detail.text and "1,234" in detail.text and "4 server errors" in detail.text and detail.text.count(" bad\"") == 2 and "class=\"h20 bad\"" in detail.text
+    assert "Traffic" in detail.text and "Last 24 hours" in detail.text and "Last 30 days" in detail.text and "1,234" in detail.text and "4 server errors" in detail.text and detail.text.count(" bad\"") == 2 and "class=\"reeve-h-100 bad\"" in detail.text
     assert page.text.index("alpha.hosting.test") < page.text.index("shop.hosting.test")
     working["on"] = False
     page = client.get("/")
