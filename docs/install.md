@@ -60,10 +60,12 @@ first:
    installer offers it if it is empty: a device carrying a filesystem or partition table is not
    listed, so wipe a spare one first with `wipefs -a`. Without a terminal, `--data-device` names it.
 2. **An image file on the root filesystem**, for a VPS with one disk and no volume. The installer
-   offers to create `/var/lib/reeve/srv.img` as XFS and mount it at `/srv`. It takes 80% of the
-   root's free space by default and always leaves the system at least 10 GB; `--data-percent 60`
-   changes the share and `--data-image` says yes without a terminal. The cost is one extra
-   filesystem layer and a little throughput. To grow it later:
+   offers to create `/var/lib/reeve/srv.img` as XFS and mount it at `/srv`. It shows the disk as it
+   is — how big it is, how much the system has already taken, how much is free — and the size it
+   recommends, then asks how many gigabytes should stay free for the system. The image takes
+   everything else. The default answer is 10 GB; `--root-reserve 20` gives it without being asked
+   and `--data-image` says yes without a terminal. The cost is one extra filesystem layer and a
+   little throughput. To grow it later:
 
    ```sh
    sudo truncate -s +20G /var/lib/reeve/srv.img

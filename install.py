@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Install or update Reeve on this Debian 13 machine from this checkout.
 
-    sudo python3 install.py [--data-device /dev/vdb | --data-image [--data-percent 80]] [--commit HASH] [--allow-modified]
+    sudo python3 install.py [--data-device /dev/vdb | --data-image [--root-reserve 10]] [--commit HASH] [--allow-modified]
 
 The installer adopts what exists and builds what is missing:
 
@@ -10,8 +10,9 @@ The installer adopts what exists and builds what is missing:
   empty non-XFS /srv is formatted as XFS with the operator's yes (--format-data without a
   terminal). Without a mount, the installer lists the empty disks and partitions it can see and
   an XFS image file on the root filesystem, and asks which should hold the data; a device is
-  formatted, added to fstab and mounted, the image is created (--data-percent sizes it, the root
-  keeps 10 GB). Without a terminal, --data-device names the device or --data-image accepts the
+  formatted, added to fstab and mounted, the image takes the root's free space except what stays
+  free for the system (asked for, 10 GB by default, or --root-reserve). Without a terminal,
+  --data-device names the device or --data-image accepts the
   image. Anything carrying a signature is refused; the installer never partitions.
 - Rootful Docker with overlay2 under /srv/docker is adopted. Without Docker, it is installed with
   the daemon and containerd settings, the quota projects and the journal cap.
@@ -141,9 +142,14 @@ IMAGE_MINIMUM = 8 * 1024 ** 3   # below this the data space is not worth having
 DEVICE_MINIMUM = 1024 ** 3      # smaller empty devices are leftovers, not offered
 
 
-def root_free():
+def root_space():
+    """Total and free bytes of the filesystem the image would live on."""
     info = os.statvfs(IMAGE.parent.parent if IMAGE.parent.exists() else "/var")
-    return info.f_bavail * info.f_frsize
+    return info.f_blocks * info.f_frsize, info.f_bavail * info.f_frsize
+
+
+def root_free():
+    return root_space()[1]
 
 
 def empty_devices(devices):
@@ -169,13 +175,13 @@ def data_choices(candidates, image):
     return options
 
 
-def choose_data(percent):
+def choose_data(reserve):
     """Nothing is mounted at /srv and no flag decided: show the empty devices and the image file, ask which.
     Returns (action, device); ("image", "menu") when the image was picked from a real choice, ("image", None) when
     it was the only option, so the image's own question still asks."""
     listing = json.loads(run("lsblk", "-J", "-b", "-o", "PATH,TYPE,SIZE,FSTYPE,PTTYPE,MOUNTPOINT"))["blockdevices"]
     candidates = empty_devices(listing)
-    try: image = image_size(root_free(), percent)
+    try: image = image_size(root_free(), reserve)
     except SystemExit as stop: image, why = None, str(stop)
     options = data_choices(candidates, image)
     if not options: raise SystemExit(why)
@@ -192,24 +198,54 @@ def choose_data(percent):
     raise SystemExit("Nothing chosen. Run the installer again, or pass --data-device or --data-image.")
 
 
-def image_size(free, percent):
-    """Pure: the image file's size from the root's free space and the chosen share, keeping the reserve."""
-    size = min(free * percent // 100, free - ROOT_RESERVE)
+def image_size(free, reserve=ROOT_RESERVE):
+    """Pure: the image file's size. The data is what this machine is for, so it takes the root's free space
+    except the slice kept for the system; nothing is held back as a share of the whole."""
+    size = free - reserve
     if size < IMAGE_MINIMUM:
-        raise SystemExit(f"Only {free / 1024 ** 3:.1f} GB is free on the root filesystem; an image would leave less than "
-                         f"{ROOT_RESERVE // 1024 ** 3} GB to the system or be under {IMAGE_MINIMUM // 1024 ** 3} GB. "
-                         "Free space, attach a volume, or pass --data-device.")
+        raise SystemExit(f"Only {free / 1024 ** 3:.1f} GB is free on the root filesystem; keeping "
+                         f"{reserve / 1024 ** 3:.0f} GB for the system would leave under {IMAGE_MINIMUM // 1024 ** 3} GB "
+                         "for the data image. Free space, attach a volume, or pass --data-device.")
     return size // (1024 ** 2) * (1024 ** 2)
 
 
-def data_image(percent, assume_yes):
+def read_gb(text):
+    """Pure: a whole number of gigabytes from what someone typed, as bytes; None when it is not one.
+    `10`, `10G`, `10 GB` and `10gb` all mean the same thing."""
+    cleaned = text.strip().lower().removesuffix("b").removesuffix("g").strip()
+    if not cleaned.isdigit(): return None
+    return int(cleaned) * 1024 ** 3
+
+
+def ask_reserve(total, free, reserve):
+    """Show the disk as it really is, then let the operator say how much of it stays free for the system.
+    The image takes the rest, so this one answer sizes it; the recommendation is a size, not a sum to do."""
+    say(f"The root filesystem holds {total / 1024 ** 3:.0f} GB: {(total - free) / 1024 ** 3:.0f} GB in use, "
+        f"{free / 1024 ** 3:.0f} GB free.")
+    say(f"Recommended data image: {image_size(free, reserve) / 1024 ** 3:.0f} GB, which leaves the system "
+        f"{reserve / 1024 ** 3:.0f} GB free.")
+    for _ in range(3):
+        answer = input(f"How many GB should stay free for the system? [{reserve // 1024 ** 3}] ").strip()
+        if not answer: return reserve
+        chosen = read_gb(answer)
+        if chosen is None:
+            say("A whole number of gigabytes, please."); continue
+        try: image_size(free, chosen)
+        except SystemExit as why: say(str(why)); continue
+        return chosen
+    raise SystemExit("No size chosen. Run the installer again, or pass --root-reserve.")
+
+
+def data_image(reserve, assume_yes, ask=False):
     """No separate filesystem: an XFS image file on the root filesystem, mounted at /srv through a loop device."""
     if IMAGE.exists():
         raise SystemExit(f"{IMAGE} exists but is not mounted at /srv; mount it (its fstab entry may be missing) or move it away")
-    free = root_free()
-    size = image_size(free, percent)
-    question = (f"Nothing separate is mounted at /srv. Create a {size / 1024 ** 3:.0f} GB data image ({percent}% of the root's "
-                f"{free / 1024 ** 3:.0f} GB free, keeping {ROOT_RESERVE // 1024 ** 3} GB for the system) at {IMAGE}? "
+    total, free = root_space()
+    image_size(free, reserve)   # refuses here, with its own explanation, before anything is asked
+    if ask: reserve = ask_reserve(total, free, reserve)
+    size = image_size(free, reserve)
+    question = (f"Nothing separate is mounted at /srv. Create a {size / 1024 ** 3:.0f} GB data image at {IMAGE}, "
+                f"leaving the system {reserve / 1024 ** 3:.0f} GB free? "
                 "A separate partition or volume is better when you have one (--data-device).")
     if not confirm(question, assume_yes, "--data-image"):
         raise SystemExit("Not created. Mount an XFS filesystem at /srv, or pass --data-device, or --data-image to accept.")
@@ -242,7 +278,7 @@ def format_mounted(mount, assume_yes):
     run("mount", "/srv")
 
 
-def data_filesystem(device, assume_yes=False, image=False, percent=80):
+def data_filesystem(device, assume_yes=False, image=False, reserve=ROOT_RESERVE):
     mount = mounted("/srv")
     empty = not any(Path("/srv").iterdir()) if mount else False
     if mount and mount.get("fstype") != "xfs" and not empty:
@@ -251,9 +287,11 @@ def data_filesystem(device, assume_yes=False, image=False, percent=80):
     plan = plan_data(mount, device, empty)
     if plan == "format": format_device(device)
     elif plan == "image":
-        action, chosen = ("image", None) if image or not sys.stdin.isatty() else choose_data(percent)
+        scripted = image or not sys.stdin.isatty()
+        action, chosen = ("image", None) if scripted else choose_data(reserve)
         if action == "format": format_device(chosen)
-        else: data_image(percent, assume_yes or image or chosen == "menu")
+        # Picking the image from the menu is already a yes to it; the size is still the operator's to set.
+        else: data_image(reserve, assume_yes or image or chosen == "menu", ask=not scripted)
     elif plan == "format-mounted": format_mounted(mount, assume_yes)
     elif plan == "amend":
         say(f"/srv is XFS on {mount['source']} without project quotas: adding prjquota to its mount options")
@@ -530,7 +568,8 @@ def main():
     parser.add_argument("--data-device", help="the empty disk or partition to format as the XFS data filesystem when /srv is not mounted (otherwise the installer lists them and asks)")
     parser.add_argument("--format-data", action="store_true", help="say yes to formatting an empty non-XFS filesystem mounted at /srv")
     parser.add_argument("--data-image", action="store_true", help="say yes to a data image file on the root filesystem when nothing separate exists")
-    parser.add_argument("--data-percent", type=int, default=80, help="the share of the root's free space the image may take (default 80)")
+    parser.add_argument("--root-reserve", type=int, default=ROOT_RESERVE // 1024 ** 3, metavar="GB",
+                        help="gigabytes kept free on the root filesystem; the data image takes the rest (default 10)")
     parser.add_argument("--commit", help="install this commit from the history instead of the checked-out tree")
     parser.add_argument("--allow-modified", action="store_true", help="install the working tree even with uncommitted changes, as a modified release")
     args = parser.parse_args()
@@ -549,8 +588,8 @@ def main():
     if missing:
         say("Installing packages: " + " ".join(missing))
         run("apt-get", "update", "-qq"); run("apt-get", "install", "-y", "-qq", "--no-install-recommends", *missing)
-    if not 10 <= args.data_percent <= 95: raise SystemExit("--data-percent takes 10 to 95")
-    data_filesystem(args.data_device, args.format_data, args.data_image, args.data_percent)
+    if not 2 <= args.root_reserve <= 1000: raise SystemExit("--root-reserve takes 2 to 1000 GB")
+    data_filesystem(args.data_device, args.format_data, args.data_image, args.root_reserve * 1024 ** 3)
     docker_engine()
     daemon_setting("userland-proxy", False)
     Path("/etc/reeve").mkdir(mode=0o700, exist_ok=True)   # secure mode's firewall rules live here, writable by the worker

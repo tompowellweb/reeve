@@ -82,12 +82,31 @@ def test_a_modified_release_carries_the_working_trees_files(tmp_path, monkeypatc
     assert clean.name == 'b' * 40 and (clean / 'reeve/__init__.py').read_text() == 'old text'
 
 
-def test_the_image_takes_the_chosen_share_but_leaves_the_root_its_reserve():
+def test_the_image_takes_the_free_space_except_what_stays_free_for_the_system():
+    """A 120 GB disk with 24 GB spent on the system used to yield a 77 GB image and leave 19 GB idle,
+    because the old rule took the smaller of 80% and free-minus-the-reserve. The reserve is the whole rule
+    now, and it is the operator's to set."""
     gib = 1024 ** 3
-    assert installer.image_size(100 * gib, 80) == 80 * gib
-    assert installer.image_size(30 * gib, 80) == 20 * gib  # 80% would leave 6 GB; the reserve wins
-    assert installer.image_size(50 * gib, 30) == 15 * gib
-    with pytest.raises(SystemExit, match='Free space, attach a volume'): installer.image_size(15 * gib, 80)
+    assert installer.image_size(96 * gib) == 86 * gib
+    assert installer.image_size(96 * gib, 20 * gib) == 76 * gib
+    assert installer.image_size(100 * gib, 10 * gib) == 90 * gib
+    with pytest.raises(SystemExit, match='Free space, attach a volume'): installer.image_size(15 * gib)
+    with pytest.raises(SystemExit, match='under 8 GB'): installer.image_size(96 * gib, 90 * gib)
+    assert [installer.read_gb(t) for t in ('10', ' 10 ', '10G', '10GB', '10 gb')] == [10 * gib] * 5
+    assert [installer.read_gb(t) for t in ('', 'lots', '1.5', '-4', 'G')] == [None] * 5
+
+
+def test_the_operator_sets_what_stays_free_and_the_image_takes_the_rest(monkeypatch, capsys):
+    gib = 1024 ** 3
+    answers = iter(['', 'not a size', '900', '20'])
+    monkeypatch.setattr('builtins.input', lambda prompt='': next(answers))
+    assert installer.ask_reserve(120 * gib, 96 * gib, 10 * gib) == 10 * gib          # empty takes the recommendation
+    shown = capsys.readouterr().out
+    assert '120 GB: 24 GB in use, 96 GB free' in shown and 'Recommended data image: 86 GB' in shown
+    assert installer.ask_reserve(120 * gib, 96 * gib, 10 * gib) == 20 * gib          # nonsense and too-large are re-asked
+    assert 'whole number' in capsys.readouterr().out
+    monkeypatch.setattr('builtins.input', lambda prompt='': 'no')
+    with pytest.raises(SystemExit, match='--root-reserve'): installer.ask_reserve(120 * gib, 96 * gib, 10 * gib)
     assert installer.amend_fstab('UUID=root / ext4 errors=remount-ro 0 1\n', '/srv', '/var/lib/reeve/srv.img', 'xfs', 'loop,prjquota').splitlines()[-1] == '/var/lib/reeve/srv.img /srv xfs loop,prjquota 0 0'
 
 
@@ -126,15 +145,15 @@ def test_the_choice_is_asked_only_when_there_is_one_to_make(monkeypatch):
     monkeypatch.setattr(installer, 'root_free', lambda: 50 * gib)
     answers = iter(['', '9', '2'])
     monkeypatch.setattr('builtins.input', lambda prompt: next(answers))
-    assert installer.choose_data(80) == ('image', 'menu')  # two bad answers, then the image
+    assert installer.choose_data(10 * gib) == ('image', 'menu')  # two bad answers, then the image
     answers = iter(['/dev/vdb'])
-    assert installer.choose_data(80) == ('format', '/dev/vdb')  # the path itself is accepted
+    assert installer.choose_data(10 * gib) == ('format', '/dev/vdb')  # the path itself is accepted
     answers = iter(['x', 'x', 'x'])
-    with pytest.raises(SystemExit, match='Nothing chosen'): installer.choose_data(80)
+    with pytest.raises(SystemExit, match='Nothing chosen'): installer.choose_data(10 * gib)
     monkeypatch.setattr(installer, 'run', lambda *a: json.dumps({'blockdevices': []}))
-    assert installer.choose_data(80) == ('image', None)  # only the image: its own question asks
+    assert installer.choose_data(10 * gib) == ('image', None)  # only the image: its own question asks
     monkeypatch.setattr(installer, 'root_free', lambda: 12 * gib)
-    with pytest.raises(SystemExit, match='Free space, attach a volume'): installer.choose_data(80)
+    with pytest.raises(SystemExit, match='Free space, attach a volume'): installer.choose_data(10 * gib)
 
 
 def test_the_forward_command_names_the_installing_account_and_the_servers_address(monkeypatch):
