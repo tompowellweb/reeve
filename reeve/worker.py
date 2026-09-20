@@ -1,6 +1,7 @@
 """Fixed Unix-socket protocol with kernel peer credentials; one mutator."""
 import json
 import os
+from pathlib import Path
 import pwd
 import socket
 import socketserver
@@ -125,7 +126,12 @@ def dispatch(message, ledger, host):
         if local['exists']:
             free = os.statvfs(BACKUPS); local['free'] = free.f_bavail * free.f_frsize
             try: local['used'] = int(command(['du', '-sb', str(BACKUPS)]).split()[0])
-            except RuntimeError: local['used'] = None
+            except (RuntimeError, ValueError, IndexError): local['used'] = None
+            from .remote_backup import LOCAL_ROOTS
+            repositories = Path(LOCAL_ROOTS[0]); local['repositories'] = None
+            if repositories.is_dir():
+                try: local['repositories'] = int(command(['du', '-sb', str(repositories)]).split()[0])
+                except (RuntimeError, ValueError, IndexError): local['repositories'] = None
         return {**result, 'local': local}
     if op == 'mail-status':
         from .mail import status as mail_status

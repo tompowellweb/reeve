@@ -15,7 +15,7 @@ def test_validation_of_every_destination_kind():
     s3 = dst.validate({'type': 's3', 'bucket': 'rackback', 'region': 'eu-west-2', 'prefix': '/hosting/', 'access_key_id': 'AKIAEXAMPLEEXAMPLE', 'secret_access_key': 'x' * 40, 'existing_password': 'old'})
     assert s3['prefix'] == 'hosting' and s3['existing_password'] == 'old' and s3['name'] == ''
     assert dst.validate({'type': 'local', 'name': 'Second disk', 'path': '/mnt/backups/reeve/'}) == {'type': 'local', 'name': 'Second disk', 'path': '/mnt/backups/reeve', 'existing_password': ''}
-    with pytest.raises(ValueError, match='goes under /srv/backups/repositories, /mnt or /media'): dst.validate({'type': 'local', 'path': '/srv/localrepo'})
+    with pytest.raises(ValueError, match='goes under /srv/repositories, /mnt or /media'): dst.validate({'type': 'local', 'path': '/srv/localrepo'})
     with pytest.raises(ValueError, match='goes under'): dst.validate({'type': 'local', 'path': '/mnt'})
     for bad in ({'type': 'ftp'}, {'type': 'sftp', 'host': 'bad host', 'username': 'u', 'path': '/x'}, {'type': 'sftp', 'host': 'h', 'username': 'u', 'path': 'relative'},
                 {'type': 'sftp', 'host': 'h', 'username': 'u', 'path': '/x', 'auth': 'password'}, {'type': 'sftp', 'host': 'h', 'port': '70000', 'username': 'u', 'path': '/x'},
@@ -29,7 +29,7 @@ def world(tmp_path, monkeypatch):
     secrets = tmp_path / 'secrets'; homes = tmp_path / 'destinations'
     for module in (dst, remote, hm): monkeypatch.setattr(module, 'trusted', lambda *a, **k: None)
     monkeypatch.setattr(dst, 'SECRETS', secrets); monkeypatch.setattr(remote, 'DESTINATIONS', homes); monkeypatch.setattr(dst, 'DESTINATIONS', homes)
-    monkeypatch.setattr(remote, 'CONFIG', tmp_path / 'legacy.json'); monkeypatch.setattr(remote, 'LOCAL_ROOTS', ('/srv/backups/repositories', str(tmp_path / 'mnt')))
+    monkeypatch.setattr(remote, 'CONFIG', tmp_path / 'legacy.json'); monkeypatch.setattr(remote, 'LOCAL_ROOTS', ('/srv/repositories', str(tmp_path / 'mnt')))
     monkeypatch.setattr(remote, 'regular', lambda p: p.read_bytes()); monkeypatch.setattr(remote, 'CACHE', tmp_path / 'cache')
     monkeypatch.setattr(remote, 'private', lambda p: Path(p))
     calls = []

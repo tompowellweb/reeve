@@ -185,7 +185,7 @@ def test_real_download_stream_is_bounded_and_hashed_without_sql_tempfile(monkeyp
 def test_configuration_rejects_commands_plain_http_secrets_in_urls_and_wrong_modes(tmp_path, monkeypatch):
     homes = tmp_path / 'destinations'; home = homes / '33333333-3333-3333-3333-333333333333'; home.mkdir(parents=True)
     monkeypatch.setattr(remote, 'DESTINATIONS', homes); monkeypatch.setattr(remote, 'CONFIG', tmp_path / 'legacy.json'); monkeypatch.setattr(remote, 'CACHE', tmp_path / 'cache')
-    monkeypatch.setattr(remote, 'LOCAL_ROOTS', ('/srv/backups/repositories', str(tmp_path)))
+    monkeypatch.setattr(remote, 'LOCAL_ROOTS', ('/srv/repositories', str(tmp_path)))
     monkeypatch.setattr(remote, 'trusted', lambda *a, **k: None)
     monkeypatch.setattr(remote, 'regular', lambda p: p.read_bytes())
     secret = tmp_path / 'secret'; secret.write_text('private'); secret.chmod(0o600)

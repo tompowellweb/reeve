@@ -62,7 +62,7 @@ def private(path):
 TYPES = ('sftp', 's3', 'local')
 NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9 _.-]{0,39}')
 LOCAL_PATH = re.compile(r'/[A-Za-z0-9_][A-Za-z0-9_./-]*')
-LOCAL_ROOTS = ('/srv/backups/repositories', '/mnt', '/media')   # where the worker and the hourly copy may write; the units say the same
+LOCAL_ROOTS = ('/srv/repositories', '/mnt', '/media')   # beside /srv/backups, never inside it; where the worker and the hourly copy may write, and the units say the same
 
 
 def validate_config(value, require_id=True):

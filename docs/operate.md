@@ -103,8 +103,8 @@ The default schedule is:
 
 **Destinations** on the Backups page are restic repositories, any number of them: an SFTP server
 (a NAS, another box), an Amazon S3 bucket, or a folder this server can reach: under
-`/srv/backups/repositories` on its own data disk, or under `/mnt` or `/media` for another disk
-or a mounted share. Give each a name. Every complete backup and dump is copied to each
+`/srv/repositories` on its own data disk, beside the local copies in `/srv/backups` and never
+among them, or under `/mnt` or `/media` for another disk or a mounted share. Give each a name. Every complete backup and dump is copied to each
 hourly and recorded only after being downloaded again and checked; each destination can be
 paused, copied to now, or disconnected on its own. A repository on this server's own disk keeps
 a deduplicated history cheaply and speeds restores, but dies with the server; a mounted share is

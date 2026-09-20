@@ -21,7 +21,7 @@ PrivateTmp=true
 ProtectHome=true
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/srv/ops /srv/sites /srv/docker/volumes /srv/backups /run/reeve -/etc/reeve -/etc/wireguard /etc/systemd/system -/mnt -/media
+ReadWritePaths=/srv/ops /srv/sites /srv/docker/volumes /srv/backups /run/reeve -/etc/reeve -/etc/wireguard /etc/systemd/system -/srv/repositories -/mnt -/media
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 [Install]
