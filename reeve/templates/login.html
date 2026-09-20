@@ -2,6 +2,6 @@
 <div class="text-center mb-4"><a href="/" class="navbar-brand navbar-brand-autodark h1">Reeve</a></div>
 <div class="card card-md"><div class="card-body"><h2 class="h2 text-center mb-1">Sign in</h2><p class="text-secondary text-center mb-4">Operator access to the sites on this server.</p>
 <form method="post" action="/login" autocomplete="off" novalidate><input type="hidden" name="csrf" value="{{ session.csrf }}">
-{% call ui.form_row('Password') %}<input name="password" type="password" class="form-control" autocomplete="current-password" required autofocus maxlength="1024">{% endcall %}
+{% call ui.form_row('Password', for_id='password') %}<input id="password" name="password" type="password" class="form-control" autocomplete="current-password" required autofocus maxlength="1024">{% endcall %}
 <div class="form-footer"><button type="submit" class="btn btn-primary w-100">Sign in</button></div></form></div></div>
 {% endblock %}

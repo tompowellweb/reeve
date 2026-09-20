@@ -81,7 +81,10 @@ def create_app(auth_path="/srv/ops/panel/web/auth.sqlite3", call=rpc, status_pat
                 return JSONResponse({"detail": "Cross-site request rejected"}, status_code=403)
         response = await next_call(request)
         response.headers.update({"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
-            "Referrer-Policy": "same-origin", "Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'"})
+            "Referrer-Policy": "same-origin", # `data:` images only: the design system draws a checkbox tick, a select's arrow and a dialog's close
+            # cross as small inline SVGs, and without this they are blocked and simply do not appear. Scripts and
+            # styles stay same-origin, so nothing inline runs.
+            "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'; base-uri 'none'"})
         return response
 
     def session(request, required=True):

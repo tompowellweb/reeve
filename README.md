@@ -6,8 +6,10 @@ and Docker Compose applications, with databases, backups and file access from a 
 - Create sites with their own containers, domains and disk quotas.
 - Choose a PHP version and an optional MariaDB, MySQL or PostgreSQL database.
 - Upload files, use SFTP and run site tools or scheduled commands.
-- Back up sites locally and to SFTP or Amazon S3; restore one site, roll a live site back, or
-  rebuild a whole server from its repository.
+- Back up sites locally and to as many destinations as you want: an SFTP server, an Amazon S3
+  bucket, or a folder on a second disk or a mounted share.
+- Restore one site, roll a live site back, or rebuild a whole server from its backups; browse
+  every backup found, download one, or let one go.
 - Monitor server resources, site health, traffic, logs and outgoing mail.
 - Put administration behind WireGuard and close every other port with one setting.
 

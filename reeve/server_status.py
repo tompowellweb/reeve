@@ -144,7 +144,7 @@ def backups_summary(ledger):
     info = status(ledger, None)
     last = max([(info.get('last_copy') or {}).get('created') or 0, (info.get('last_site_copy') or {}).get('created') or 0]) or None
     return {'state': info['state'], 'type': info.get('type'), 'pending': info.get('pending', 0) + info.get('pending_sites', 0),
-            'last_copy': last, 'error': info.get('error', '')}
+            'destinations': len(info.get('destinations') or []), 'last_copy': last, 'error': info.get('error', '')}
 
 
 def mail_summary(host):

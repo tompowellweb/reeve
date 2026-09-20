@@ -31,8 +31,10 @@ restrictions that break it.
 ## Prove restoration
 
 Use engine-native database dumps and complete site backups that can restore on a clean
-server. Apply the same retention policy locally and remotely; retain final and imported
-backups. Changes to this path require an actual restore exercise on a test machine.
+server. Keep them by count, with their own policy for the copies on the server and for the
+repositories it copies to, since a repository deduplicates and a plain copy does not; retain
+final, imported and operator-kept backups, and never let a copy here go before every
+destination holds it. Changes to this path require an actual restore exercise on a test machine.
 
 A newer release must always restore a backup written by an older one, so a server can be
 rebuilt on the current release from its last backup and resume. Any change to the backup

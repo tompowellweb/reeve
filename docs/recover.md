@@ -66,6 +66,8 @@ server** and give its path. A `server-record.json` in that folder is read too.
 
 ## Manage backups
 
+![Recover in Manage mode: every backup found, by site, with its size and where it is](images/recover-manage.png)
+
 **Recover → Manage** lists every backup the last scan found, by site: complete backups and
 database dumps, each with its time, size and where it is (here, a named repository or the
 folder), and for a copy here which destinations hold it yet. Two actions:

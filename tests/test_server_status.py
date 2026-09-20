@@ -102,7 +102,7 @@ def test_a_failing_source_is_reported_and_the_rest_still_shows(box, monkeypatch)
 
 def test_backups_mail_and_sftp_summaries_reduce_the_modules_status(monkeypatch):
     monkeypatch.setattr('reeve.remote_backup.status', lambda ledger, site_id: {'state': 'paused', 'type': 's3', 'pending': 1, 'pending_sites': 3, 'last_copy': {'created': 5.0}, 'last_site_copy': {'created': 9.0}})
-    assert ss.backups_summary(None) == {'state': 'paused', 'type': 's3', 'pending': 4, 'last_copy': 9.0, 'error': ''}
+    assert ss.backups_summary(None) == {'state': 'paused', 'type': 's3', 'pending': 4, 'destinations': 0, 'last_copy': 9.0, 'error': ''}
     monkeypatch.setattr('reeve.remote_backup.status', lambda ledger, site_id: {'state': 'not configured', 'type': None, 'pending': 0, 'pending_sites': 0, 'last_copy': None, 'last_site_copy': None})
     assert ss.backups_summary(None)['last_copy'] is None
     counts = lambda s, d: {'hour': {'sent': s, 'deferred': d, 'bounced': 0, 'limited': 0}, 'day': {'sent': s * 2, 'deferred': d, 'bounced': 1, 'limited': 0}}

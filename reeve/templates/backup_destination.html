@@ -1,6 +1,6 @@
-{% extends 'base.html' %}{% import 'ui.html' as ui %}{% block title %}Backup destination · Reeve{% endblock %}{% block content %}
+{% extends 'base.html' %}{% import 'ui.html' as ui %}{% block title %}Backup destinations · Reeve{% endblock %}{% block content %}
 <div class="site-overview">
-{{ ui.page('Backup destination', subtitle='One destination for all sites on this server.') }}
+{{ ui.page('Backup destinations', subtitle='Where this server keeps its copies. Every destination holds every site.') }}
 {% call ui.section('Local copies', note='Database dumps and complete site backups are written here first; the nightly hour, the staging limits and retention are in <code>server.yaml</code>. To move it: stop the panel services, move the folder, set <code>backups.local_path</code> in <code>server.yaml</code>, start them again.'|safe) %}
 <p><strong>{{destination.local.path if destination.local else '/srv/backups'}}</strong>{% if destination.local and destination.local.default %} · the default{% endif %}</p>
 {% if destination.local and destination.local.exists %}{% set repositories %}{{destination.local.repositories|size}} under <code>/srv/repositories</code>{% endset %}{{ ui.facts([('Used by backups', destination.local.used|size if destination.local.used is not none else 'Unavailable')] + ([('Used by repositories here', repositories)] if destination.local.repositories is not none else []) + [('Free on that filesystem', destination.local.free|size)]) }}{% elif destination.local %}{{ ui.notice('The folder does not exist; the installer creates it, or set <code>backups.local_path</code> to a folder that does.'|safe, 'bad') }}{% endif %}
