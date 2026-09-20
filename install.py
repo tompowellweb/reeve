@@ -395,6 +395,9 @@ def foundation(release):
         account = pwd.getpwnam("hosting-web")
     for path in ("/srv/ops/panel", "/srv/ops/panel/web", "/srv/ops/panel/worker"):
         Path(path).mkdir(mode=0o700 if path.endswith(("web", "worker")) else 0o755, parents=True, exist_ok=True)
+    # Folder repositories on this disk live here, beside /srv/backups. The services may write it only if it exists
+    # when they start (ProtectSystem=strict binds listed paths at start), so the installer makes it, not the worker.
+    Path("/srv/repositories").mkdir(mode=0o700, exist_ok=True)
     os.chown("/srv/ops/panel/web", account.pw_uid, account.pw_gid)
     server = Path("/srv/ops/server.yaml")
     if not server.exists():
