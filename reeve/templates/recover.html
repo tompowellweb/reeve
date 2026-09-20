@@ -1,7 +1,7 @@
 {% extends 'base.html' %}{% block title %}Recover · Reeve{% endblock %}{% block content %}
 {% macro when(value) %}{% if value %}<time data-timestamp="{{value}}">{{value|timestamp}}</time>{% else %}unknown time{% endif %}{% endmacro %}
-<a class="breadcrumb" href="/">← Sites</a><div class="heading"><div><h1>Recover</h1><p class="muted">{% if mode == 'manage' %}Every backup the last scan found, with its size and where it is. Download one, or let one go to free the space.{% else %}Every site that was backed up, from the connected repository, a folder of backups or this server's own copies. Pick sites and points in time; each comes back as a new site or into a live one.{% endif %}</p></div>
-<nav class="site-nav" aria-label="Mode"><a href="/recover"{% if mode != 'manage' %} aria-current="page"{% endif %}>Restore</a><a href="/recover?mode=manage"{% if mode == 'manage' %} aria-current="page"{% endif %}>Manage</a></nav></div>
+<a class="breadcrumb" href="/">← Sites</a><div class="heading"><div><h1>Recover</h1><p class="muted">{% if mode == 'manage' %}Every backup the last scan found, with its size and where it is. Download one, or let one go to free the space.{% else %}Every site that was backed up, from the connected repository, a folder of backups or this server's own copies. Pick sites and points in time; each comes back as a new site or into a live one.{% endif %}</p></div></div>
+<nav class="site-nav" aria-label="Mode"><a href="/recover"{% if mode != 'manage' %} aria-current="page"{% endif %}>Restore</a><a href="/recover?mode=manage"{% if mode == 'manage' %} aria-current="page"{% endif %}>Manage</a></nav>
 {% if error %}<p class="error">{{error}}</p>{% endif %}
 {% set scan = status.scan %}
 <section class="card" id="recovery-scan" data-state="{{'running' if scan and scan.state in ('requested', 'running') else 'idle'}}"><h2>Look for backups</h2>
