@@ -4,7 +4,7 @@
 {% include 'site_nav.html' %}
 {% if logs %}
 {% set sources = [] %}{% for s in logs.sources %}{% set _ = sources.append((s.key, s.label)) %}{% endfor %}
-{% call ui.section(cls='mb-3') %}<form method="get" action="/sites/{{site.name}}/logs">
+{% call ui.section() %}<form method="get" action="/sites/{{site.name}}/logs">
 {% call ui.form_row('Source') %}{{ ui.choice('source', sources, logs.source) }}{% endcall %}
 <div class="row g-3"><div class="col-md">{% call ui.form_row('Last') %}<select class="form-select" name="lines">{% for n in (100, 500, 2000) %}<option value="{{n}}"{% if n == logs.limit %} selected{% endif %}>{{n}} lines</option>{% endfor %}</select>{% endcall %}</div>
 <div class="col-md">{% call ui.form_row('Within') %}<select class="form-select" name="since">{% for key, label in [('', 'any time'), ('1h', 'the last hour'), ('24h', 'the last day'), ('7d', 'the last week')] %}<option value="{{key}}"{% if key == logs.since %} selected{% endif %}>{{label}}</option>{% endfor %}</select>{% endcall %}</div>

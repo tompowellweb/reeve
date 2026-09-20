@@ -3,7 +3,7 @@
 {% set remote = backup.remote or {} %}
 {% set context = recovery_context %}
 {% set sitebackup = backup.site or {} %}
-{% call ui.section('Backups & recovery', id='recovery', actions=ui.state(protection.title, 'ok' if protection.title == 'Backed up and copied off' else 'warn'), note=protection.detail, flush=true, cls='mb-3') %}
+{% call ui.section('Backups & recovery', id='recovery', actions=ui.state(protection.title, 'ok' if protection.title == 'Backed up and copied off' else 'warn'), note=protection.detail, flush=true) %}
 {% if backup.error or context.error %}<div class="card-body">{% if backup.error %}{{ ui.notice(backup.error, 'bad') }}{% endif %}{% if context.error %}{{ ui.notice(context.error, 'bad') }}{% endif %}</div>{% endif %}
 <div class="table-responsive"><table class="table table-vcenter card-table concerns-table"><caption class="visually-hidden">Backup concerns and available actions</caption>
 <thead><tr><th scope="col">Concern</th><th scope="col">Current position</th><th scope="col">Action</th></tr></thead>

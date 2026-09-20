@@ -5,7 +5,7 @@
 {% include 'site_nav.html' %}
 {% set tones = {'succeeded': 'ok', 'failed': 'bad', 'recovery-needed': 'bad', 'running': 'warn', 'queued': 'warn', 'active': 'ok', 'starting': 'warn'} %}
 <div id="content-jobs" data-status-url="/sites/{{site.name}}/content/status" data-pending="{{'yes' if jobs and jobs[0].state in ['queued','running'] else 'no'}}">
-{% call ui.section('Toolbox status', flush=true, cls='mb-3') %}<div class="card-body">
+{% call ui.section('Toolbox status', flush=true) %}<div class="card-body">
 {% if toolbox and toolbox.state == 'active' %}<p>{{ ui.state('active', 'ok', dot=true) }} · <strong>{{toolbox.details.recipe}}</strong> · {{toolbox.container}}{% if toolbox.details.php_branch %} · PHP {{toolbox.details.php_branch}}{% endif %}</p>
 <p>Connect from your computer through the server's existing SSH access:</p>{{ ui.code(toolbox.details.connect) }}
 <p class="mt-3">SSH host key: <code>{{toolbox.details.fingerprint}}</code></p>
@@ -16,7 +16,7 @@
 {% if jobs %}<div class="list-group list-group-flush">{% for job in jobs[:4] %}<div class="list-group-item"><div class="row align-items-center"><div class="col"><strong>{{job.kind}}</strong> {{ ui.state(job.state, tones.get(job.state, 'muted')) }} <span class="text-secondary">· {{job.step}}</span>{% if job.error %}<div class="text-danger">{{job.error}}</div>{% endif %}</div>
 <div class="col-auto"><a class="btn btn-ghost-secondary btn-sm" href="/sites/{{site.name}}/content/output/{{job.id}}">Output</a></div></div></div>{% endfor %}</div>{% endif %}{% endcall %}
 </div>
-{% if not toolbox or toolbox.state not in ['active','starting'] %}{% call ui.section('Start a toolbox', cls='mb-3') %}<form action="/sites/{{site.name}}/toolbox/start" method="post"><input type="hidden" name="csrf" value="{{session.csrf}}"><input type="hidden" name="id" value="{{ident}}">
+{% if not toolbox or toolbox.state not in ['active','starting'] %}{% call ui.section('Start a toolbox') %}<form action="/sites/{{site.name}}/toolbox/start" method="post"><input type="hidden" name="csrf" value="{{session.csrf}}"><input type="hidden" name="id" value="{{ident}}">
 <div class="row g-3"><div class="col-md">{% call ui.form_row('Saved recipe') %}<select class="form-select" name="recipe">{% for recipe in recipes %}<option value="{{recipe.name}}">{{recipe.name}}</option>{% endfor %}</select>{% endcall %}</div>
 <div class="col-md">{% call ui.form_row('Starting directory within site content') %}<input class="form-control" name="path" value=".">{% endcall %}</div></div>
 {% call ui.form_row('Your SSH public key') %}<textarea class="form-control font-monospace" name="public_key" rows="3" required placeholder="ssh-ed25519 AAAA…">{{settings.public_key}}</textarea>{% endcall %}

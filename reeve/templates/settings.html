@@ -2,7 +2,7 @@
 {{ ui.page('Server settings', subtitle='What this server does for every site. Each Save applies at once and says what it did.') }}
 {% if saved %}{{ ui.notice('Saved ' ~ titles.get(saved, saved) ~ '.' ~ (' ' ~ note if note else ''), 'ok') }}{% endif %}
 {% if secure %}
-{% call ui.section('Secure access', id='secure', cls='mb-3') %}
+{% call ui.section('Secure access', id='secure') %}
 {% if secure.stage == 'off' %}<p>Administration over WireGuard, and a firewall that leaves only the sites (80, 443), customer SFTP (2222) and the tunnel reachable from the internet, on IPv4 and IPv6. Three steps: enable the tunnel, connect to it, lock down from over it. Until you lock down nothing is blocked except the panel port from outside.</p>
 <form method="post" action="/settings/secure/enable"><input type="hidden" name="csrf" value="{{session.csrf}}"><button class="btn btn-primary">Enable WireGuard</button></form>
 {% else %}
@@ -23,7 +23,7 @@
 {% if secure.unlock %}<form method="post" action="/settings/secure/close-unlock"><input type="hidden" name="csrf" value="{{session.csrf}}"><button class="btn">Close port 22</button></form>{% endif %}
 </div>
 {% if secure.stage == 'locked-pending' %}<p class="text-secondary">Reverts by itself at {{ ui.time(secure.pending_until) }} unless confirmed from over the tunnel.</p>{% endif %}
-<div class="row g-3">
+<div class="row g-3 align-items-end">
 <div class="col-md"><form method="post" action="/settings/secure/add-client"><input type="hidden" name="csrf" value="{{session.csrf}}"><div class="input-group"><input name="name" class="form-control" placeholder="laptop" pattern="[a-z0-9][a-z0-9-]{0,30}" required aria-label="Client name"><button class="btn">Add client</button></div></form></div>
 <div class="col-md"><form method="post" action="/settings/secure/disable"><input type="hidden" name="csrf" value="{{session.csrf}}">{% call ui.form_row('Type <code>disable</code>'|safe, cls='') %}<div class="input-group"><input name="confirm" class="form-control" autocomplete="off"><button class="btn btn-outline-danger">Turn secure mode off</button></div>{% endcall %}</form></div>
 </div>
@@ -33,14 +33,14 @@
 {% endcall %}
 {% endif %}
 {% if settings %}
-{% call ui.section('Certificates', id='certificates', cls='mb-3') %}
+{% call ui.section('Certificates', id='certificates') %}
 <form method="post" action="/settings/certificates"><input type="hidden" name="csrf" value="{{session.csrf}}">
 <div class="row g-3 mb-3">{% call ui.form_row('Mode', cls='col-md') %}<select name="mode" class="form-select">{% for m in settings.certificates.modes %}<option value="{{m}}"{% if m == settings.certificates.mode %} selected{% endif %}>{{'Public: Let\'s Encrypt, for a server the internet reaches' if m == 'public' else "Internal: the edge's own certificate authority, for a test machine or private names"}}</option>{% endfor %}</select>{% endcall %}
 {% call ui.form_row('Contact email for Let\'s Encrypt', cls='col-md') %}<input name="email" type="email" class="form-control" value="{{settings.certificates.email}}" placeholder="you@example.com">{% endcall %}</div>
 <p class="text-secondary">Public needs the sites' names pointing at this server and ports 80 and 443 reachable. A name that is not there yet is served with the edge's own certificate until it is; each site's Domains section shows which. Saving a switch to public restarts the edge for a second and asks for every name at once.</p>
 <button class="btn btn-primary">Save certificates</button></form>
 {% endcall %}
-{% call ui.section('Outbound mail', id='mail', cls='mb-3') %}
+{% call ui.section('Outbound mail', id='mail') %}
 <form method="post" action="/settings/mail"><input type="hidden" name="csrf" value="{{session.csrf}}">
 {% call ui.form_row('Mode') %}<select name="mode" class="form-select">{% for m in settings.mail.modes %}<option value="{{m}}"{% if m == settings.mail.mode %} selected{% endif %}>{{ {'off': 'Off', 'direct': 'Direct: this server delivers to the internet', 'relay': 'Relay: hand every message to a smart host', 'sink': 'Sink: keep messages in a mailbox on this server, for testing'}[m] }}</option>{% endfor %}</select>{% endcall %}
 <div class="row g-3 mb-3">{% call ui.form_row('Smart host (relay mode)', cls='col-md') %}<input name="relayhost" class="form-control" value="{{settings.mail.relayhost}}" placeholder="smtp.example.net:587">{% endcall %}{% call ui.form_row('Messages per hour, per site', cls='col-md') %}<input name="rate_per_hour" type="number" class="form-control" min="1" max="100000" value="{{settings.mail.rate_per_hour}}">{% endcall %}</div>
@@ -48,12 +48,12 @@
 <p class="text-secondary">Direct delivery needs the provider to allow port 25 out and reverse DNS matching the hostname. Saving redeploys the relay and reattaches every PHP site.</p>
 <button class="btn btn-primary">Save mail</button></form>
 {% endcall %}
-{% call ui.section('Server profile', id='profile', cls='mb-3') %}
+{% call ui.section('Server profile', id='profile') %}
 <form method="post" action="/settings/profile"><input type="hidden" name="csrf" value="{{session.csrf}}">
 {% call ui.form_row('Profile', hint='The defaults a new site gets: PHP memory and workers, the site\'s memory cap, what its database is sized for. Existing sites keep their values.') %}<select name="name" class="form-select">{% for key, label in settings.profile.profiles.items() %}<option value="{{key}}"{% if key == settings.profile.name %} selected{% endif %}>{{label}}</option>{% endfor %}</select>{% endcall %}
 <button class="btn btn-primary">Save profile</button></form>
 {% endcall %}
-{% call ui.section('Backups', id='backups', cls='mb-3') %}
+{% call ui.section('Backups', id='backups') %}
 <form method="post" action="/settings/backups"><input type="hidden" name="csrf" value="{{session.csrf}}">
 <div class="row g-3 mb-3">{% call ui.form_row('Nightly complete backup at (hour, UTC)', cls='col-md') %}<input name="hour" type="number" class="form-control" min="0" max="23" value="{{settings.backups.hour}}">{% endcall %}{% call ui.form_row('Local folder', hint='Changing the local folder needs the folder moved with the panel services stopped; the setting alone moves nothing.', cls='col-md') %}<input name="local_path" class="form-control" value="{{settings.backups.local_path}}">{% endcall %}</div>
 <p class="text-secondary">Keep complete site backups by count, the newest of each of the last so many days, weeks and months that have one. Zero turns a tier off; at least one daily is always kept. Two dailies here means about three times a site's size on this disk; a repository deduplicates, so every destination can keep far more.</p>
@@ -68,7 +68,7 @@
 <button name="existing" value="remove" class="btn btn-outline-danger">Apply and remove them</button><button name="existing" value="keep" class="btn">Apply but keep the existing ones</button></form>{% endset %}
 <div id="retention-confirm" class="mt-3">{{ ui.notice(retention_text, 'warn') }}</div>{% endif %}
 {% endcall %}
-{% call ui.section('PHP rebuilds', id='updates', cls='mb-3') %}
+{% call ui.section('PHP rebuilds', id='updates') %}
 <form method="post" action="/settings/updates"><input type="hidden" name="csrf" value="{{session.csrf}}">
 <div class="row g-3 mb-3">{% call ui.form_row('Rebuild at (hour, UTC)', cls='col-md') %}<input name="hour" type="number" class="form-control" min="0" max="23" value="{{settings.updates.hour}}">{% endcall %}{% call ui.form_row('Every, days', cls='col-md') %}<input name="every_days" type="number" class="form-control" min="1" max="90" value="{{settings.updates.every_days}}">{% endcall %}</div>
 <p class="text-secondary">Each PHP branch is rebuilt with fresh packages on this schedule; sites roll to the new image with the previous one retained. The <a href="/versions">PHP page</a> shows the runs.</p>

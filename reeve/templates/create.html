@@ -1,6 +1,6 @@
 {% extends 'base.html' %}{% import 'ui.html' as ui %}{% block title %}Create site · Reeve{% endblock %}{% block content %}
 {{ ui.page('Create a site', subtitle='Site data has an XFS quota. Container limits are optional. Setup continues if you close this page.') }}
-{% call ui.section(cls='mb-3') %}
+{% call ui.section() %}
 <form method="post" action="/create"><input type="hidden" name="csrf" value="{{session.csrf}}"><input type="hidden" name="id" value="{{ident}}">
 <div class="row g-3 mb-3">{% call ui.form_row('Site name', cls='col-md') %}<input name="name" class="form-control" required maxlength="32" placeholder="my-site" value="{{values.name}}">{% endcall %}{% call ui.form_row('Primary domain', cls='col-md') %}<input name="domain" class="form-control" required maxlength="253" placeholder="my-site.hosting.test" value="{{values.domain}}">{% endcall %}</div>
 {% call ui.form_row('Additional domains (optional)', hint='One hostname per line. All domains serve the same site. This VM uses local test certificates; public TLS and DNS cutover come later.') %}<textarea id="aliases" name="aliases" class="form-control" rows="3" placeholder="preview.example.co.uk&#10;www.example.co.uk">{{values.aliases}}</textarea>{% endcall %}

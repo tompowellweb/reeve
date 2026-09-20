@@ -4,7 +4,7 @@
 {{ ui.page('Scheduled commands', pretitle=back, subtitle=intro) }}
 {% include 'site_nav.html' %}
 {% set tones = {'succeeded': 'ok', 'failed': 'bad', 'recovery-needed': 'bad', 'running': 'warn', 'queued': 'warn'} %}
-{% if schedules %}{% call ui.section(flush=true, cls='mb-3') %}<div class="list-group list-group-flush">
+{% if schedules %}{% call ui.section(flush=true) %}<div class="list-group list-group-flush">
 {% for s in schedules %}<div class="list-group-item"><div class="row align-items-center g-2"><div class="col-12 col-md"><div class="fw-bold">{{s.name}}</div>
 <div class="text-secondary">{{ ui.state('Enabled' if s.enabled else 'Paused', 'ok' if s.enabled else 'warn', dot=true) }} · every {{s.interval}} minutes{% if s.last_state %} · latest run: {{ ui.state(s.last_state, tones.get(s.last_state, 'muted')) }}{% endif %}</div>
 {% if s.error %}<div class="text-danger">{{s.error}}</div>{% endif %}</div>
