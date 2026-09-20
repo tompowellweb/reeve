@@ -21,6 +21,11 @@ if (document.querySelector('.site-overview')) {
     if (!document.hidden && !document.querySelector('.modal.show, details[open], form:focus-within, [data-concern-panel]:not([hidden])')) window.location.reload();
   }, 30000);
 }
+// A text the operator is meant to copy selects itself when clicked. This lives here rather than in an
+// onclick attribute, which the panel's content security policy blocks.
+for (const box of document.querySelectorAll('[data-select-all]')) {
+  box.addEventListener('click', () => box.select());
+}
 // A form that says what it is about to do asks once before doing it.
 for (const form of document.querySelectorAll('form[data-confirm]')) {
   form.addEventListener('submit', event => { if (!window.confirm(form.dataset.confirm)) event.preventDefault(); });

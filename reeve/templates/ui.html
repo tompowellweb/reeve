@@ -62,11 +62,11 @@
 {%- endmacro %}
 
 {# components/progress: a quantity against its limit. Tabler's own height, not `progress-sm`: a quarter
-   of a rem under a large figure reads as nothing at all. The colour is set through the bar's own custom
-   property rather than a `bg-*` class: those are built with `color-mix()`, and a browser without it drops
-   the whole declaration, leaving a bar with no fill at all on a grey track. #}
+   of a rem under a large figure reads as nothing at all. The width and the colour are classes, not a
+   style attribute: the panel is served under a policy that blocks inline styles, and Tabler's `bg-*`
+   classes are built with `color-mix()`, which not every browser resolves. #}
 {% macro progress(value, tone='info', label='') -%}
-<div class="progress"><div class="progress-bar" style="width: {{[0, [100, value|int]|min]|max}}%; --tblr-progress-bar-bg: var(--tblr-{{TONES.get(tone, tone)}})" role="progressbar" aria-valuenow="{{value|int}}" aria-valuemin="0" aria-valuemax="100"{% if label %} aria-label="{{label}}"{% endif %}></div></div>
+<div class="progress"><div class="progress-bar reeve-w-{{[0, [100, value|int]|min]|max}} reeve-bar-{{tone}}" role="progressbar" aria-valuenow="{{value|int}}" aria-valuemin="0" aria-valuemax="100"{% if label %} aria-label="{{label}}"{% endif %}></div></div>
 {%- endmacro %}
 
 {# layout/navs-tabs: items is a list of (href, label); current is the active href #}
@@ -81,7 +81,7 @@
 
 {# a command, a key, a log: monospace, wraps, never overflows the page #}
 {% macro code(text, rows=0) -%}
-{% if rows %}<textarea readonly rows="{{rows}}" class="form-control font-monospace" onclick="this.select()">{{text}}</textarea>{% else %}<pre class="reeve-code mb-0">{{text}}</pre>{% endif %}
+{% if rows %}<textarea readonly rows="{{rows}}" class="form-control font-monospace" data-select-all>{{text}}</textarea>{% else %}<pre class="reeve-code mb-0">{{text}}</pre>{% endif %}
 {%- endmacro %}
 
 {# components/list-group: one item with its actions when a table is too much; use inside ui.section(flush=true) within a `list-group list-group-flush`; the caller's content is the actions #}
