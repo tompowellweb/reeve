@@ -1,32 +1,32 @@
-{% macro dialog(id, title) %}
-<dialog id="{{id}}" aria-labelledby="{{id}}-title"><div class="dialog-heading"><h2 id="{{id}}-title">{{title}}</h2><button type="button" class="quiet close-dialog" data-close-dialog aria-label="Close dialog">×</button></div>{{caller()}}</dialog>
-{% endmacro %}
+{% import 'ui.html' as ui %}
+{# a confirmation or a small form off the page; ui.dialog under the name the overview and schedules pages import #}
+{% macro dialog(id, title) %}{% set body = caller() %}{% call ui.dialog(id, title) %}{{ body }}{% endcall %}{% endmacro %}
 
 {% macro schedule_form(site, session, s=none, overview=false) %}
 <form method="post" action="/sites/{{site.name}}/schedules">
 <input type="hidden" name="csrf" value="{{session.csrf}}">{% if overview %}<input type="hidden" name="return_to" value="overview">{% endif %}
-<div class="form-pair"><label>Name<input name="name" value="{{s.name if s else ''}}" {% if s %}readonly{% endif %} required pattern="[a-z][a-z0-9-]{0,47}"></label>
-<label>Every (minutes)<input name="interval" type="number" min="1" max="1440" value="{{s.interval if s else 5}}" required></label></div>
-<label>Command<select name="tool">{% for value,label in [('php','PHP script'),('wp','WP-CLI (WordPress)'),('shell','Shell'),('console','Symfony console'),('composer','Composer')] if site.php_branch or value == 'shell' %}<option value="{{value}}" {% if s and s.settings.tool==value %}selected{% endif %}>{{label}}</option>{% endfor %}</select></label>
-<label>Arguments or shell command<textarea name="arguments" rows="3" required>{{s.settings.arguments if s else ''}}</textarea></label>
-<label>Directory within site content<input name="path" value="{{s.settings.path if s else '.'}}" required></label>
-<label class="check"><input type="checkbox" name="internet" value="yes" {% if s and s.settings.internet %}checked{% endif %}>Allow outgoing connections</label>
-<label class="check"><input type="checkbox" name="enabled" value="yes" {% if not s or s.enabled %}checked{% endif %}>Enabled</label>
-<p class="muted">Saving restarts the interval. Pausing prevents future runs; a command already running continues. Failed runs pause for review.</p>
-{% if site.php_branch %}<details><summary>WordPress cron example</summary><p>Select WP-CLI and enter <code>cron event run --due-now</code>. Set <code>DISABLE_WP_CRON</code> to <code>true</code> in wp-config.php to disable page-triggered cron.</p></details>{% endif %}
-<button>Save schedule</button></form>
+<div class="row g-3"><div class="col-md">{% call ui.form_row('Name') %}<input class="form-control" name="name" value="{{s.name if s else ''}}" {% if s %}readonly{% endif %} required pattern="[a-z][a-z0-9-]{0,47}">{% endcall %}</div>
+<div class="col-md">{% call ui.form_row('Every (minutes)') %}<input class="form-control" name="interval" type="number" min="1" max="1440" value="{{s.interval if s else 5}}" required>{% endcall %}</div></div>
+{% call ui.form_row('Command') %}<select class="form-select" name="tool">{% for value,label in [('php','PHP script'),('wp','WP-CLI (WordPress)'),('shell','Shell'),('console','Symfony console'),('composer','Composer')] if site.php_branch or value == 'shell' %}<option value="{{value}}" {% if s and s.settings.tool==value %}selected{% endif %}>{{label}}</option>{% endfor %}</select>{% endcall %}
+{% call ui.form_row('Arguments or shell command') %}<textarea class="form-control font-monospace" name="arguments" rows="3" required>{{s.settings.arguments if s else ''}}</textarea>{% endcall %}
+{% call ui.form_row('Directory within site content') %}<input class="form-control" name="path" value="{{s.settings.path if s else '.'}}" required>{% endcall %}
+<div class="mb-3">{{ ui.toggle('internet', 'Allow outgoing connections', on=(s and s.settings.internet)) }}{{ ui.toggle('enabled', 'Enabled', on=(not s or s.enabled)) }}</div>
+<p class="text-secondary">Saving restarts the interval. Pausing prevents future runs; a command already running continues. Failed runs pause for review.</p>
+{% if site.php_branch %}<details class="mb-3"><summary>WordPress cron example</summary><p class="text-secondary mb-0">Select WP-CLI and enter <code>cron event run --due-now</code>. Set <code>DISABLE_WP_CRON</code> to <code>true</code> in wp-config.php to disable page-triggered cron.</p></details>{% endif %}
+<button class="btn btn-primary">Save schedule</button></form>
 {% endmacro %}
 
 {% macro upload_form(site, session, sql=false, overview=false) %}
 <form class="content-upload" data-url="/sites/{{site.name}}/content/upload" data-csrf="{{session.csrf}}">
 {% if overview %}<input type="hidden" name="return_to" value="overview">{% endif %}
-{% if sql %}<input type="hidden" name="kind" value="sql"><input type="hidden" name="path" value="."><label>SQL file<input type="file" name="file" accept=".sql,text/plain,application/sql" required></label>
-<p>Import plain SQL into this site's {{site.database.engine}} database using its application account. Compressed SQL and PostgreSQL custom dumps are not supported.</p>
-<label class="check"><input type="checkbox" name="confirm" value="yes" required>I understand this may change existing database contents.</label>
-<p class="muted">Earlier statements may have committed if an import fails. Interrupted imports are never replayed automatically.</p>
-{% else %}<label>Action<select name="kind"><option value="upload">Copy a file</option><option value="extract">Unpack a ZIP or tar archive</option></select></label>
-<label>File<input type="file" name="file" required></label><label>Destination path<input name="path" value="." required></label>
-<p>Include the filename for a single file. For archives, choose a directory or “.” for the content root.</p><label class="check"><input type="checkbox" name="replace" value="yes">Replace existing files</label>
-<p class="muted">Up to 512 MiB per upload, within the site quota. Archives keep their folder structure; links and special files are rejected. Failed extraction can leave partial content.</p>{% endif %}
-<button>{{'Import SQL' if sql else 'Upload'}}</button><p class="upload-status" role="status"></p></form>
+{% if sql %}<input type="hidden" name="kind" value="sql"><input type="hidden" name="path" value=".">
+{% call ui.form_row('SQL file', hint="Import plain SQL into this site's " ~ site.database.engine ~ " database using its application account. Compressed SQL and PostgreSQL custom dumps are not supported.") %}<input class="form-control" type="file" name="file" accept=".sql,text/plain,application/sql" required>{% endcall %}
+<div class="mb-3"><label class="form-check"><input class="form-check-input" type="checkbox" name="confirm" value="yes" required><span class="form-check-label">I understand this may change existing database contents.</span></label></div>
+<p class="text-secondary">Earlier statements may have committed if an import fails. Interrupted imports are never replayed automatically.</p>
+{% else %}{% call ui.form_row('Action') %}<select class="form-select" name="kind"><option value="upload">Copy a file</option><option value="extract">Unpack a ZIP or tar archive</option></select>{% endcall %}
+{% call ui.form_row('File') %}<input class="form-control" type="file" name="file" required>{% endcall %}
+{% call ui.form_row('Destination path', hint='Include the filename for a single file. For archives, choose a directory or “.” for the content root.') %}<input class="form-control" name="path" value="." required>{% endcall %}
+<div class="mb-3">{{ ui.toggle('replace', 'Replace existing files') }}</div>
+<p class="text-secondary">Up to 512 MiB per upload, within the site quota. Archives keep their folder structure; links and special files are rejected. Failed extraction can leave partial content.</p>{% endif %}
+<button class="btn btn-primary">{{'Import SQL' if sql else 'Upload'}}</button><div class="upload-status text-secondary mt-2" role="status"></div></form>
 {% endmacro %}

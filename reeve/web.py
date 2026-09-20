@@ -439,7 +439,7 @@ def create_app(auth_path="/srv/ops/panel/web/auth.sqlite3", call=rpc, status_pat
 
     @app.post('/backups/reveal')
     async def backup_reveal(request: Request):
-        await mutation(request)
+        form = await mutation(request)
         try: result = call({'op': 'backup-reveal', 'id': str(form.get('id', ''))})
         except (ValueError, OSError) as exc: return destination_page(request, error=str(exc))
         return destination_page(request, revealed=result)

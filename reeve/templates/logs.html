@@ -1,17 +1,17 @@
-{% extends 'legacy_base.html' %}{% block title %}Logs · {{site.name}}{% endblock %}{% block content %}
-<a class="breadcrumb" href="/sites/{{site.name}}">← {{site.name}}</a><h1>Logs</h1>{% include 'site_nav.html' %}
-<p>What this site's containers and the edge wrote, newest last. PHP errors go to the PHP container's output (the pages themselves show none); nginx's own errors and its access lines to the web server's; every request that reached the edge, with its status and time, to the edge access log for each of the site's hostnames.</p>
-{% if error %}<p class="error">{{error}}</p>{% endif %}
+{% extends 'base.html' %}{% import 'ui.html' as ui %}{% block title %}Logs · {{site.name}}{% endblock %}{% block content %}
+{% set back %}<a href="/sites/{{site.name}}" class="text-reset">{{site.name}}</a>{% endset %}
+{{ ui.page('Logs', pretitle=back, subtitle="What this site's containers and the edge wrote, newest last. PHP errors go to the PHP container's output (the pages themselves show none); nginx's own errors and its access lines to the web server's; every request that reached the edge, with its status and time, to the edge access log for each of the site's hostnames.") }}
+{% include 'site_nav.html' %}
 {% if logs %}
-<form method="get" action="/sites/{{site.name}}/logs" class="row-actions">
-<label>Source<select name="source">{% for s in logs.sources %}<option value="{{s.key}}"{% if s.key == logs.source %} selected{% endif %}>{{s.label}}</option>{% endfor %}</select></label>
-<label>Last<select name="lines">{% for n in (100, 500, 2000) %}<option value="{{n}}"{% if n == logs.limit %} selected{% endif %}>{{n}} lines</option>{% endfor %}</select></label>
-<label>Within<select name="since">{% for key, label in [('', 'any time'), ('1h', 'the last hour'), ('24h', 'the last day'), ('7d', 'the last week')] %}<option value="{{key}}"{% if key == logs.since %} selected{% endif %}>{{label}}</option>{% endfor %}</select></label>
-<label>Containing<input name="match" value="{{logs.match}}" placeholder="e.g. PHP Fatal, 500" maxlength="200"></label>
-<button>Show</button></form>
-<section class="card"><h2>{{logs.label}}{% if logs.container %} <code>{{logs.container}}</code>{% endif %} · {{logs.count}} line{{'' if logs.count == 1 else 's'}}</h2>
-{% if logs.lines %}<pre class="log-lines">{% for line in logs.lines %}{{line}}
-{% endfor %}</pre>{% else %}<p class="empty-summary">Nothing{% if logs.match %} containing “{{logs.match}}”{% endif %}{% if logs.since %} in that window{% endif %}.</p>{% endif %}
-</section>
+{% set sources = [] %}{% for s in logs.sources %}{% set _ = sources.append((s.key, s.label)) %}{% endfor %}
+{% call ui.section(cls='mb-3') %}<form method="get" action="/sites/{{site.name}}/logs">
+{% call ui.form_row('Source') %}{{ ui.choice('source', sources, logs.source) }}{% endcall %}
+<div class="row g-3"><div class="col-md">{% call ui.form_row('Last') %}<select class="form-select" name="lines">{% for n in (100, 500, 2000) %}<option value="{{n}}"{% if n == logs.limit %} selected{% endif %}>{{n}} lines</option>{% endfor %}</select>{% endcall %}</div>
+<div class="col-md">{% call ui.form_row('Within') %}<select class="form-select" name="since">{% for key, label in [('', 'any time'), ('1h', 'the last hour'), ('24h', 'the last day'), ('7d', 'the last week')] %}<option value="{{key}}"{% if key == logs.since %} selected{% endif %}>{{label}}</option>{% endfor %}</select>{% endcall %}</div>
+<div class="col-md">{% call ui.form_row('Containing') %}<input class="form-control" name="match" value="{{logs.match}}" placeholder="e.g. PHP Fatal, 500" maxlength="200">{% endcall %}</div></div>
+<button class="btn btn-primary">{{ ui.icon('search') }} Show</button></form>{% endcall %}
+{% set heading %}{{logs.label}}{% if logs.container %} <code>{{logs.container}}</code>{% endif %} · {{logs.count}} line{{'' if logs.count == 1 else 's'}}{% endset %}
+{% call ui.section(heading, flush=not logs.lines) %}{% if logs.lines %}<pre class="reeve-log mb-0">{% for line in logs.lines %}{{line}}
+{% endfor %}</pre>{% else %}{{ ui.empty('Nothing' ~ (' containing “' ~ logs.match ~ '”' if logs.match else '') ~ (' in that window' if logs.since else '') ~ '.') }}{% endif %}{% endcall %}
 {% endif %}
 {% endblock %}

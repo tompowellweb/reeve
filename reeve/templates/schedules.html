@@ -1,9 +1,16 @@
-{% extends 'legacy_base.html' %}{% block title %}Scheduled commands · {{site.name}}{% endblock %}{% block content %}
-<a class="breadcrumb" href="/sites/{{site.name}}">← {{site.name}}</a><h1>Scheduled commands</h1>{% include 'site_nav.html' %}
-<p>Run commands for {{site.name}} without waiting for page visits. Each run uses the site's identity, files, PHP and database settings.</p>
-<p>Schedules wait while another operation or SSH toolbox uses this site. Missed intervals become one run; they do not build a queue. Failed runs pause the schedule for review. The worker must be running, and a busy worker can delay execution.</p>
-{% from 'site_forms.html' import schedule_form %}
-{% for s in schedules %}<section class="card"><h2>{{s.name}}</h2><p>{{'Enabled' if s.enabled else 'Paused'}} · every {{s.interval}} minutes{% if s.last_state %} · latest run: {{s.last_state}}{% endif %}</p>{% if s.error %}<p class="error">{{s.error}}</p>{% endif %}{% if s.last_job %}<p><a href="/sites/{{site.name}}/content/output/{{s.last_job}}">Latest output</a></p>{% endif %}<details><summary>Edit schedule</summary>{{schedule_form(site,session,s)}}</details></section>{% endfor %}
-<section class="card"><h2>Add schedule</h2>{{schedule_form(site,session)}}</section>
-<p>For WordPress, set <code>DISABLE_WP_CRON</code> to <code>true</code> in wp-config.php, then select WP-CLI with <code>cron event run --due-now</code>, or PHP script with <code>wp-cron.php</code>. WP-CLI arguments omit the leading <code>wp</code>. Saving starts the interval again. Disabling prevents future runs; a run already started continues. The last 20 completed runs are retained for each schedule.</p>
+{% extends 'base.html' %}{% import 'ui.html' as ui %}{% from 'site_forms.html' import schedule_form %}{% block title %}Scheduled commands · {{site.name}}{% endblock %}{% block content %}
+{% set back %}<a href="/sites/{{site.name}}" class="text-reset">{{site.name}}</a>{% endset %}
+{% set intro %}<div>Run commands for {{site.name}} without waiting for page visits. Each run uses the site's identity, files, PHP and database settings.</div><div>Schedules wait while another operation or SSH toolbox uses this site. Missed intervals become one run; they do not build a queue. Failed runs pause the schedule for review. The worker must be running, and a busy worker can delay execution.</div>{% endset %}
+{{ ui.page('Scheduled commands', pretitle=back, subtitle=intro) }}
+{% include 'site_nav.html' %}
+{% set tones = {'succeeded': 'ok', 'failed': 'bad', 'recovery-needed': 'bad', 'running': 'warn', 'queued': 'warn'} %}
+{% if schedules %}{% call ui.section(flush=true, cls='mb-3') %}<div class="list-group list-group-flush">
+{% for s in schedules %}<div class="list-group-item"><div class="row align-items-center g-2"><div class="col-12 col-md"><div class="fw-bold">{{s.name}}</div>
+<div class="text-secondary">{{ ui.state('Enabled' if s.enabled else 'Paused', 'ok' if s.enabled else 'warn', dot=true) }} · every {{s.interval}} minutes{% if s.last_state %} · latest run: {{ ui.state(s.last_state, tones.get(s.last_state, 'muted')) }}{% endif %}</div>
+{% if s.error %}<div class="text-danger">{{s.error}}</div>{% endif %}</div>
+<div class="col-12 col-md-auto"><div class="btn-list">{% if s.last_job %}<a class="btn btn-ghost-secondary btn-sm" href="/sites/{{site.name}}/content/output/{{s.last_job}}">Latest output</a>{% endif %}<button type="button" class="btn btn-sm" data-bs-toggle="modal" data-bs-target="#schedule-edit-{{loop.index}}">Edit schedule</button></div></div></div></div>
+{% endfor %}</div>{% endcall %}
+{% for s in schedules %}{% call ui.dialog('schedule-edit-' ~ loop.index, 'Edit schedule · ' ~ s.name) %}{{ schedule_form(site, session, s) }}{% endcall %}{% endfor %}{% endif %}
+{% call ui.section('Add schedule') %}{{ schedule_form(site, session) }}
+<p class="text-secondary mt-3 mb-0">For WordPress, set <code>DISABLE_WP_CRON</code> to <code>true</code> in wp-config.php, then select WP-CLI with <code>cron event run --due-now</code>, or PHP script with <code>wp-cron.php</code>. WP-CLI arguments omit the leading <code>wp</code>. Saving starts the interval again. Disabling prevents future runs; a run already started continues. The last 20 completed runs are retained for each schedule.</p>{% endcall %}
 {% endblock %}

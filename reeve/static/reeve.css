@@ -1,5 +1,5 @@
 /* What Tabler has no word for. Everything else is Tabler's own classes through the macros in templates/ui.html. */
-.reeve-code{background:var(--tblr-bg-surface-secondary);border:1px solid var(--tblr-border-color);border-radius:var(--tblr-border-radius);padding:.5rem .75rem;font-size:.8125rem;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;max-height:70vh;overflow:auto}
+.reeve-code{color:var(--tblr-body-color);background:var(--tblr-bg-surface-secondary);border:1px solid var(--tblr-border-color);border-radius:var(--tblr-border-radius);padding:.5rem .75rem;font-size:.8125rem;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;max-height:70vh;overflow:auto}
 .reeve-log{background:#1f2a25;color:#e6ede8;border-radius:var(--tblr-border-radius);padding:.75rem;font-size:.75rem;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;max-height:70vh;overflow:auto}
 .reeve-card-text{font-family:var(--tblr-font-monospace);font-size:.75rem;line-height:1.4}
 .qr svg{width:220px;height:220px;background:#fff;padding:8px;border-radius:6px}

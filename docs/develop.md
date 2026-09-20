@@ -28,9 +28,22 @@ prepared test server and can change it. Read the selected script's requirements 
 | `reeve/server_record.py`, `reeve/restoration.py` | The server record and multi-site recovery |
 | `reeve/certificates.py`, `reeve/site_logs.py` | Certificate status and log reading |
 | `reeve/templates/`, `reeve/static/` | Interface templates and assets |
+| `reeve/templates/ui.html` | The interface vocabulary: one macro per concept |
 | `templates/` | Container build recipes and helper scripts |
 | `install.py`, `reeve/setup.py`, `systemd/` | Installation and services |
 | `config/`, `tests/` | Configuration and verification |
+
+## The interface
+
+The pages are server-rendered Jinja on [Tabler](https://tabler.io) 1.5.1, the Bootstrap 5 admin
+design system, with Tabler Icons 3.47.0 as an SVG sprite. Both are vendored under
+`reeve/static/vendor/` with their licences; there is no build step and nothing is fetched from a
+content delivery network. To move to a newer Tabler, replace `tabler.min.css` and `tabler.min.js`
+from the `@tabler/core` package of that version, read its upgrade notes, and look at every page.
+
+`reeve/templates/ui.html` holds the vocabulary: one macro per concept the panel shows, each
+naming the Tabler component it is built from. A page calls the macros; layout classes are not
+written by hand. Add a macro when a new concept appears rather than styling one page.
 
 Feature modules live under `reeve/`. Follow `reeve/php_settings.py` for an example of a
 recorded operation with validation and rollback. Register new worker requests in the field

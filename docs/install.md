@@ -35,13 +35,13 @@ and run `systemctl restart ssh`. Use the new account for everything below.
 
 ## Install Reeve
 
-The example below installs release `v1.5.3`.
+The example below installs release `v1.6.0`.
 
 ```sh
 sudo apt-get install -y git
 git clone https://github.com/tompowellweb/reeve.git
 cd reeve
-git checkout v1.5.3
+git checkout v1.6.0
 sudo python3 install.py
 ```
 

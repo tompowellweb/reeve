@@ -28,7 +28,7 @@
 
 {# components/alert: an error, a warning, a note, a secret shown once (important=true) #}
 {% macro notice(text, tone='info', important=false, title='') -%}
-<div class="alert alert-{{ {'ok': 'success', 'warn': 'warning', 'bad': 'danger', 'info': 'info', 'muted': 'secondary'}.get(tone, tone) }}{% if important %} alert-important{% endif %}" role="alert">{% if title %}<h4 class="alert-heading">{{title}}</h4>{% endif %}<div>{{text}}</div></div>
+<div class="alert alert-{{ {'ok': 'success', 'warn': 'warning', 'bad': 'danger', 'info': 'info', 'muted': 'secondary'}.get(tone, tone) }}{% if important %} alert-important{% endif %}" role="alert"><div>{% if title %}<h4 class="alert-heading">{{title}}</h4>{% endif %}<div>{{text}}</div></div></div>
 {%- endmacro %}
 
 {# components/empty: nothing here yet; the caller's content is the action #}
@@ -47,8 +47,8 @@
 {%- endmacro %}
 
 {# forms/elements: a labelled control with help; the caller's content is the control #}
-{% macro form_row(label, hint='', cls='mb-3') -%}
-<div class="{{cls}}"><label class="form-label">{{label}}</label>{{caller()}}{% if hint %}<small class="form-hint">{{hint}}</small>{% endif %}</div>
+{% macro form_row(label, hint='', cls='mb-3', for_id='') -%}
+<div class="{{cls}}"><label class="form-label"{% if for_id %} for="{{for_id}}"{% endif %}>{{label}}</label>{{caller()}}{% if hint %}<small class="form-hint">{{hint}}</small>{% endif %}</div>
 {%- endmacro %}
 
 {# forms/select-group: a few exclusive options; options is a list of (value, label) #}
@@ -79,4 +79,9 @@
 {# a command, a key, a log: monospace, wraps, never overflows the page #}
 {% macro code(text, rows=0) -%}
 {% if rows %}<textarea readonly rows="{{rows}}" class="form-control font-monospace" onclick="this.select()">{{text}}</textarea>{% else %}<pre class="reeve-code mb-0">{{text}}</pre>{% endif %}
+{%- endmacro %}
+
+{# components/list-group: one item with its actions when a table is too much; use inside ui.section(flush=true) within a `list-group list-group-flush`; the caller's content is the actions #}
+{% macro row(title, detail='', badge='') -%}
+<div class="list-group-item"><div class="row align-items-center g-2"><div class="col-12 col-md"><div class="fw-bold">{{title}}{% if badge %} {{badge}}{% endif %}</div>{% if detail %}<div class="text-secondary small">{{detail}}</div>{% endif %}</div>{% if caller %}<div class="col-12 col-md-auto"><div class="btn-list">{{caller()}}</div></div>{% endif %}</div></div>
 {%- endmacro %}

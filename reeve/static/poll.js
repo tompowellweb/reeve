@@ -1,10 +1,10 @@
-const operations = document.querySelectorAll('#operation, #domain-operation, #runtime-operation, #catalogue-operation, #database-operation, #database-catalogue-operation, #backup-operation, #recovery-scan, #progress');
+const operations = document.querySelectorAll('#operation, #domain-operation, #runtime-operation, #catalogue-operation, #rebuild-operation, #database-operation, #database-catalogue-operation, #backup-operation, #site-backup-operation, #restore-operation, #recovery-scan, #progress, #actions');
 if ([...operations].some(operation => ['queued', 'running'].includes(operation.dataset.state))) {
   const refreshOperation = async () => {
-    if (document.querySelector('dialog[open], .modal.show, [data-concern-panel]:not([hidden])')) { window.setTimeout(refreshOperation, 2500); return; }
+    if (document.querySelector('.modal.show, [data-concern-panel]:not([hidden])')) { window.setTimeout(refreshOperation, 2500); return; }
     try {
       const response = await fetch('/api/sites', {credentials: 'same-origin'});
-      if (response.ok && !document.querySelector('dialog[open], .modal.show, [data-concern-panel]:not([hidden])')) window.location.reload();
+      if (response.ok && !document.querySelector('.modal.show, [data-concern-panel]:not([hidden])')) window.location.reload();
     } catch (_) { /* Retry below without interrupting an open editor. */ }
     window.setTimeout(refreshOperation, 5000);
   };

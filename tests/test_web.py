@@ -118,14 +118,14 @@ def test_database_dump_and_schedule_are_authenticated_and_show_scope(setup, monk
     assert 'Destination settings' in page.text
     destination = client.get('/backups')
     assert 'Rackback' in destination.text and 'Copy now' in destination.text and 'name="id" value="' + s3['id'] + '"' in destination.text
-    assert '<code>rackback</code> in eu-west-2' in destination.text and '<h2>Local copies</h2><p><strong>/srv/backups</strong> · the default</p>' in destination.text and 'backups.local_path' in destination.text
+    assert '<code>rackback</code> in eu-west-2' in destination.text and '<h3 class="card-title">Local copies</h3>' in destination.text and '<p><strong>/srv/backups</strong> · the default</p>' in destination.text and 'backups.local_path' in destination.text
     assert 'The folder does not exist' in destination.text  # not on this machine
     from reeve import host as hm
     (tmp_path / 'local-backups').mkdir(); (tmp_path / 'local-backups/dump.bin').write_bytes(b'x' * 4096)
     monkeypatch.setattr(hm, 'BACKUPS', tmp_path / 'local-backups')
     monkeypatch.setattr(hm, 'command', lambda args, timeout=120: '4096\t' + args[2] + '\n' if args[0] == 'du' else '')
     destination = client.get('/backups')
-    assert f'<strong>{tmp_path}/local-backups</strong></p>' in destination.text and '<dt>Used by backups</dt><dd>4 KiB</dd>' in destination.text and 'Free on that filesystem' in destination.text
+    assert f'<strong>{tmp_path}/local-backups</strong></p>' in destination.text and '<div class="datagrid-title">Used by backups</div><div class="datagrid-content">4 KiB</div>' in destination.text and 'Free on that filesystem' in destination.text
     assert client.post('/sites/dump/backup/remote', data={'csrf': csrf(page)}).status_code == 200
     with ledger.db() as db: assert db.execute('SELECT next_run FROM remote_cycles').fetchone()[0] == 0
     data = {'csrf': csrf(page), 'id': str(uuid.uuid4())}
@@ -274,7 +274,7 @@ def test_site_rules_form_queues_a_durable_job_for_managed_sites_only(setup, monk
     (ledger.sites / 'pages/conf').mkdir(parents=True); (ledger.sites / 'pages/conf/site.nginx.conf').write_text('# none yet\n')
     login(client)
     page = client.get('/sites/pages')
-    assert 'data-dialog="rules-dialog"' in page.text and 'name="text"' in page.text
+    assert 'data-bs-target="#rules-dialog"' in page.text and 'name="text"' in page.text
     reply = client.post('/sites/pages/rules', data={'csrf': csrf(page), 'id': str(uuid.uuid4()), 'text': 'location = /a { return 301 /b; }', 'return_to': 'overview'}, follow_redirects=False)
     assert reply.status_code == 303 and reply.headers['location'] == '/sites/pages'
     job = ledger.content_jobs(row['id'])[0]
@@ -291,7 +291,7 @@ def test_php_limits_form_queues_a_durable_job_for_php_sites_only(setup, monkeypa
     (ledger.sites / 'shop/conf').mkdir(parents=True)
     login(client)
     page = client.get('/sites/shop')
-    assert 'data-dialog="php-limits-dialog"' in page.text and 'id="php-limits-dialog"' in page.text and page.text.count('id="php-dialog"') == 1 and 'name="max_input_vars"' in page.text and '120 s execution · 128 MB upload' in page.text
+    assert 'data-bs-target="#php-limits-dialog"' in page.text and 'id="php-limits-dialog"' in page.text and page.text.count('id="php-dialog"') == 1 and 'name="max_input_vars"' in page.text and '120 s execution · 128 MB upload' in page.text
     values = {'max_execution_time': '120', 'upload_max_filesize_mb': '64', 'post_max_size_mb': '72', 'max_input_vars': '3000', 'memory_limit_mb': '512'}
     reply = client.post('/sites/shop/php-settings', data={'csrf': csrf(page), 'id': str(uuid.uuid4()), 'return_to': 'overview', **values}, follow_redirects=False)
     assert reply.status_code == 303 and reply.headers['location'] == '/sites/shop'
@@ -311,7 +311,7 @@ def test_customer_sftp_and_ownership_forms_queue_durable_jobs(setup, monkeypatch
     ledger.update(row['id'], 'succeeded', 'published'); (ledger.sites / 'pages/conf').mkdir(parents=True)
     login(client)
     page = client.get('/sites/pages')
-    assert 'data-dialog="sftp-dialog"' in page.text and 'name="secondary"' in page.text and 'Customer SFTP</strong><small>Off' in page.text and 'Turn on' in page.text and 'name="duration"' in page.text
+    assert 'data-bs-target="#sftp-dialog"' in page.text and 'name="secondary"' in page.text and 'Customer SFTP</strong><div class="text-secondary small">Off' in page.text and 'Turn on' in page.text and 'name="duration"' in page.text
     key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxOaNNRJKLd9yPcoRvRsHMDaKdSyqRchiLoYW1hGY4v dev'
     reply = client.post('/sites/pages/sftp', data={'csrf': csrf(page), 'id': str(uuid.uuid4()), 'action': 'on', 'secondary': key + '\n', 'duration': '4h', 'return_to': 'overview'}, follow_redirects=False)
     assert reply.status_code == 303, reply.text
@@ -341,7 +341,7 @@ def test_mail_page_shows_relay_queue_and_sites(setup, monkeypatch):
     monkeypatch.setattr(mail, 'delete', lambda host, ident: dropped.append(ident) or {'deleted': ident})
     reply = client.post('/mail/delete', data={'csrf': csrf(page), 'id': '3AAA02'}, follow_redirects=False)
     assert reply.status_code == 303 and dropped == ['3AAA02']
-    assert '<a href="/mail" aria-current="page">Mail</a>' in page.text  # the header names the section
+    assert '<a class="dropdown-item active" href="/mail">Mail</a>' in page.text  # the header names the section
 
 
 def test_backups_page_offers_a_connection_and_takes_one(setup, monkeypatch):

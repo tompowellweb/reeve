@@ -1,1 +1,8 @@
-{% extends 'legacy_base.html' %}{% block title %}Operation output · {{site.name}}{% endblock %}{% block content %}<a class="breadcrumb" href="/sites/{{site.name}}">← {{site.name}}</a><h1>{{job.kind}} · {{job.state}}</h1>{% include 'site_nav.html' %}<p>{{job.step}}</p><p>Output is private to the signed-in operator. Application commands may print sensitive configuration.</p><pre>{{output}}</pre>{% endblock %}
+{% extends 'base.html' %}{% import 'ui.html' as ui %}{% block title %}Operation output · {{site.name}}{% endblock %}{% block content %}
+{% set back %}<a href="/sites/{{site.name}}" class="text-reset">{{site.name}}</a>{% endset %}
+{% set tones = {'succeeded': 'ok', 'failed': 'bad', 'recovery-needed': 'bad', 'running': 'warn', 'queued': 'warn'} %}
+{% set heading %}{{job.kind}} · {{ ui.state(job.state, tones.get(job.state, 'muted')) }}{% endset %}
+{{ ui.page(heading, pretitle=back, subtitle=job.step) }}
+{% include 'site_nav.html' %}
+{% call ui.section(note='Output is private to the signed-in operator. Application commands may print sensitive configuration.') %}{{ ui.code(output) }}{% endcall %}
+{% endblock %}

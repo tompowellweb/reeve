@@ -1,13 +1,15 @@
-{% extends 'legacy_base.html' %}{% block title %}Import application · Reeve{% endblock %}{% block content %}
-<a href="/">← Sites</a><div class="heading"><h1>Import application</h1><a class="secondary" href="/agent-access">Agent access</a></div>
-<p>Supply a Compose project with its files and database dumps. Keep its folder layout; include Dockerfiles for custom builds or use registry images.</p>
-<div class="notice">Review a project, then deploy supported single-service applications. Database restore, multi-service deployment and whole-site backups are the next steps.</div>
-<form class="card narrow" id="application-upload" data-csrf="{{session.csrf}}"><h2>Review a project</h2>
-<label>Site name<input name="name" required pattern="[a-z0-9][a-z0-9-]{0,31}" placeholder="my-application"></label>
-<label>Domain<input name="domain" required placeholder="my-application.hosting.test"></label>
-<label>HTTP service<input name="service" required placeholder="web"></label><label>Container HTTP port<input name="port" type="number" min="1" max="65535" required value="80"></label>
-<label>Project archive<input name="file" type="file" required accept=".zip,.tar,.gz,.tgz"></label>
-<p class="muted">ZIP or tar, up to 512 MiB uploaded and 4 GiB expanded. Include one Compose file at the project root. No separate manifest.</p><button>Upload and review</button><p role="status" class="upload-status"></p></form>
-<section class="card"><h2>Received projects</h2>{% for item in imports %}<div class="summary-row"><div><strong>{{item.input.name}}</strong><small>{% if item.deployment %}{{'Deployed' if item.deployment.state == 'succeeded' else item.deployment.state}} · {{item.deployment.step}}{% else %}{{'Needs preparation' if item.state == 'needs_preparation' else 'Package reviewed'}}{% endif %} · {{item.created|timestamp}}{% if not item.review_version or item.review_version < 2 %} · Earlier preparation rules{% endif %}</small></div><a class="secondary" href="{{item.url}}">View project</a></div>{% else %}<p>No projects received.</p>{% endfor %}</section>
-<details class="card"><summary>Preparation instructions</summary><pre class="wrap-anywhere">{{prompt}}</pre></details>
+{% extends 'base.html' %}{% import 'ui.html' as ui %}{% block title %}Import application · Reeve{% endblock %}{% block content %}
+{% call ui.page('Import application', pretitle='Sites', subtitle='Supply a Compose project with its files and database dumps. Keep its folder layout; include Dockerfiles for custom builds or use registry images.') %}<a class="btn" href="/agent-access">Agent access</a>{% endcall %}
+{{ ui.notice('Review a project, then deploy supported single-service applications. Database restore, multi-service deployment and whole-site backups are the next steps.', 'info') }}
+<form id="application-upload" data-csrf="{{session.csrf}}">{% call ui.section('Review a project') %}
+<div class="row g-3 mb-3"><div class="col-md">{% call ui.form_row('Site name', cls='') %}<input class="form-control" name="name" required pattern="[a-z0-9][a-z0-9-]{0,31}" placeholder="my-application">{% endcall %}</div><div class="col-md">{% call ui.form_row('Domain', cls='') %}<input class="form-control" name="domain" required placeholder="my-application.hosting.test">{% endcall %}</div></div>
+<div class="row g-3 mb-3"><div class="col-md">{% call ui.form_row('HTTP service', cls='') %}<input class="form-control" name="service" required placeholder="web">{% endcall %}</div><div class="col-md">{% call ui.form_row('Container HTTP port', cls='') %}<input class="form-control" name="port" type="number" min="1" max="65535" required value="80">{% endcall %}</div></div>
+{% call ui.form_row('Project archive', hint='ZIP or tar, up to 512 MiB uploaded and 4 GiB expanded. Include one Compose file at the project root. No separate manifest.') %}<input class="form-control" name="file" type="file" required accept=".zip,.tar,.gz,.tgz">{% endcall %}
+<button class="btn btn-primary">Upload and review</button><p role="status" class="upload-status text-secondary mt-3 mb-0"></p>
+{% endcall %}</form>
+{% call ui.section('Received projects', flush=true) %}{% if imports %}<div class="list-group list-group-flush">
+{% for item in imports %}{% set detail %}{% if item.deployment %}{{ ui.state('Deployed' if item.deployment.state == 'succeeded' else item.deployment.state, 'ok' if item.deployment.state == 'succeeded' else 'bad' if item.deployment.state in ('failed', 'recovery-needed') else 'warn') }} · {{item.deployment.step}}{% else %}{{ ui.state('Needs preparation' if item.state == 'needs_preparation' else 'Package reviewed', 'warn' if item.state == 'needs_preparation' else 'ok') }}{% endif %} · {{ ui.time(item.created) }}{% if not item.review_version or item.review_version < 2 %} · Earlier preparation rules{% endif %}{% endset %}
+{% call ui.row(item.input.name, detail) %}<a class="btn btn-ghost-secondary btn-sm" href="{{item.url}}">View project</a>{% endcall %}
+{% endfor %}</div>{% else %}{{ ui.empty('No projects received.') }}{% endif %}{% endcall %}
+{% call ui.section() %}<details><summary>Preparation instructions</summary><div class="mt-3">{{ ui.code(prompt) }}</div></details>{% endcall %}
 <script defer src="/static/import.js"></script>{% endblock %}
