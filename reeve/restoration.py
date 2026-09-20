@@ -507,16 +507,49 @@ def download_lane(ledger, pending, lanes, spawn=None):
     return row['id']
 
 
-def runtime_branches(pending):
-    """Pure: the PHP branches the queued recoveries will need, read from the manifests the scan already cached.
+def snapshot_manifest(config, snapshot):
+    """The manifest inside one repository snapshot, by the paths the snapshot itself records: a backup written
+    under another server's backup root does not lie where this server would put it."""
+    from . import remote_backup as remote
+    listing = json.loads(remote.execute(config, ['snapshots', snapshot, '--json'], maximum=4 * 1024 ** 2))
+    paths = (listing[0].get('paths') or []) if listing else []
+    where = next((p for p in paths if p.endswith('manifest.json')), None) or (paths[0].rstrip('/') + '/manifest.json' if paths else None)
+    if not where: raise ValueError('The snapshot records no paths')
+    return json.loads(remote.execute(config, ['dump', snapshot, where], maximum=4 * 1024 ** 2))
 
-    A backup the scan described by its tags alone has no cached manifest; that site simply builds its runtime
-    the old way, inside its own restore.
+
+def ensure_manifest(row):
+    """The manifest for one queued recovery, read once and kept.
+
+    The scan reads a manifest only when a snapshot's tags cannot describe the backup, which since 1.3.2 is the
+    unusual case: everything written by a current Reeve is described by its tags alone and never read. So the
+    branch a site wants is not known until someone asks for it, and this asks — a few kilobytes, off in the
+    lane while the first download runs. None when it cannot be had; the restore then does what it always did.
     """
+    cached = cached_manifest(row['backup_id'])
+    if cached is not None: return cached
+    module = dumps if row['mode'] == 'dump' else sites
+    source = row['source']
+    try:
+        local = module.artifact_path(row['backup_id']) / 'manifest.json'
+        if local.is_file(): manifest = json.loads(local.read_text())
+        elif source.startswith('folder:'): manifest = json.loads((Path(source[len('folder:'):]) / 'manifest.json').read_text())
+        elif source.startswith('repository:') and row['snapshot']:
+            from . import remote_backup as remote
+            manifest = snapshot_manifest(remote.destination(source[len('repository:'):]), row['snapshot'])
+        else: return None
+    except Exception: return None
+    remember_manifest(row['backup_id'], manifest)
+    return manifest
+
+
+def runtime_branches(rows, read=ensure_manifest):
+    """Pure given `read`: the PHP branches these recoveries will need, chosen exactly as the restore chooses
+    them — the branch pinned in the backup, else the version in its payload."""
     wanted = []
-    for row in pending:
+    for row in rows:
         if row['mode'] != 'new': continue
-        managed = (cached_manifest(row['backup_id']) or {}).get('managed') or {}
+        managed = (read(row) or {}).get('managed') or {}
         payload = managed.get('payload') or {}
         if (payload.get('runtime') or managed.get('runtime')) != 'php': continue
         branch = managed.get('php_branch') or payload.get('php_version')
@@ -531,24 +564,38 @@ def prebuild_runtimes(pending, lanes, spawn=None):
     so this costs no disk that was not already going to be spent; it only takes the minute a branch takes off
     the critical path. Building is mostly one core and the repository link is busy elsewhere, so it is close to
     free. A failure here is never a recovery's failure: the site's own `ensure` will try again and report it.
+
+    The whole lane is one thread, because reading the manifests may have to reach the repository first.
     """
-    from . import php_runtime
-    lane = lanes.setdefault('runtimes', {})
-    for branch in [b for b, thread in lane.items() if not thread.is_alive()]: lane.pop(branch)
-    try: built = set(php_runtime.catalog())
-    except (OSError, ValueError, RuntimeError): return []
-    started = []
-    for branch in runtime_branches(pending):
-        if branch in built or branch in lane or len(lane) >= BUILDING: continue
-        def work(branch=branch):
-            try: php_runtime.build([branch])
-            except Exception as exc: print('preparing the PHP ' + branch + ' runtime ahead of its restore failed, '
-                                           'and is left to the restore itself: ' + str(exc)[:200], flush=True)
-        if spawn: spawn(work)
-        else:
-            lane[branch] = threading.Thread(target=work, daemon=True, name='recovery-runtime-' + branch); lane[branch].start()
-        started.append(branch)
-    return started
+    lane = lanes.setdefault('runtimes', {'thread': None, 'seen': set(), 'branches': []})
+    if lane['thread'] is not None and lane['thread'].is_alive(): return None
+    rows = [r for r in pending if r['mode'] == 'new' and r['backup_id'] not in lane['seen']]
+    if not rows: return None
+    lane['seen'].update(r['backup_id'] for r in rows)
+
+    def work():
+        from . import php_runtime
+        try: built = set(php_runtime.catalog())
+        except (OSError, ValueError, RuntimeError): built = set()
+        wanted = [b for b in runtime_branches(rows) if b not in built]
+        lane['branches'] = wanted
+        for group in [wanted[i:i + BUILDING] for i in range(0, len(wanted), BUILDING)]:
+            running = []
+            for branch in group:
+                def build(branch=branch):
+                    try: php_runtime.build([branch])
+                    except Exception as exc: print('preparing the PHP ' + branch + ' runtime ahead of its restore failed, '
+                                                   'and is left to the restore itself: ' + str(exc)[:200], flush=True)
+                if spawn: spawn(build)
+                else:
+                    thread = threading.Thread(target=build, daemon=True, name='recovery-runtime-' + branch)
+                    thread.start(); running.append(thread)
+            for thread in running: thread.join()
+
+    if spawn: spawn(work)
+    else:
+        lane['thread'] = threading.Thread(target=work, daemon=True, name='recovery-runtimes'); lane['thread'].start()
+    return [r['backup_id'] for r in rows]
 
 
 def tick(ledger, host, lanes=None, spawn=None):

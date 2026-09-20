@@ -323,34 +323,59 @@ def test_a_download_failure_belongs_to_its_own_recovery(world, monkeypatch):
 
 def test_the_runtimes_the_queue_needs_are_built_beside_it(world, monkeypatch):
     """A restore used to build its PHP runtime inline, one branch at a time in the middle of the queue: a
-    minute a branch on the critical path. The branches are named in the manifests the scan already read, so
-    they are built beside the downloads instead. They are the same images, so no more disk is spent."""
+    minute a branch on the critical path. They are built beside the downloads instead. The branch is in the
+    backup's manifest, which the scan does *not* read when a snapshot's tags describe it — the usual case
+    since 1.3.2 — so the lane reads it itself. Getting that wrong made the whole lane dead code: a rebuild on
+    2026-09-20 still built PHP 7.0 and 8.3 inside their create jobs, and saved nothing."""
     ledger, live, scan = world
-    blog_backup = scan['sites'][1]['backups'][0]['id']; shop_backup = scan['sites'][0]['backups'][0]['id']
-    rs.remember_manifest(blog_backup, {**SITE_MANIFEST, 'operation': blog_backup,
-                                       'managed': {'runtime': 'php', 'php_branch': '7.0', 'payload': {'runtime': 'php', 'php_version': '8.4'}}})
-    rs.remember_manifest(shop_backup, {**SITE_MANIFEST, 'operation': shop_backup,
-                                       'managed': {'runtime': 'php', 'payload': {'runtime': 'php', 'php_version': '8.3'}}})
-    rs.submit(ledger, [{'backup': blog_backup, 'mode': 'new', 'name': 'blog', 'domains': 'blog.example'},
-                       {'backup': shop_backup, 'mode': 'new', 'name': 'later', 'domains': 'later.example'}])
-    pending = rs.recoveries(ledger, active=True)
-    # The pinned branch wins over the payload's version, exactly as the restore itself chooses it.
-    assert rs.runtime_branches(pending) == ['7.0', '8.3']
+    first, second = str(uuid.UUID(int=31)), str(uuid.UUID(int=32))
+    rows = [{'backup_id': first, 'mode': 'new', 'source': 'repository:d1', 'snapshot': 'snap-a'},
+            {'backup_id': second, 'mode': 'new', 'source': 'repository:d1', 'snapshot': 'snap-b'},
+            {'backup_id': str(uuid.UUID(int=33)), 'mode': 'files', 'source': 'repository:d1', 'snapshot': 'snap-c'}]
+    # Nothing is cached, because the scan described these from their tags: without a read there is no branch.
+    assert rs.runtime_branches(rows, read=lambda row: rs.cached_manifest(row['backup_id'])) == []
+    read = []
+    branches = {'snap-a': {'runtime': 'php', 'php_branch': '7.0', 'payload': {'runtime': 'php', 'php_version': '8.4'}},
+                'snap-b': {'runtime': 'php', 'payload': {'runtime': 'php', 'php_version': '8.3'}}}
+    def fake_snapshot_manifest(config, snapshot):
+        read.append(snapshot)
+        return {**SITE_MANIFEST, 'managed': branches[snapshot]}
+    monkeypatch.setattr(rs, 'snapshot_manifest', fake_snapshot_manifest)
+    import reeve.remote_backup as remote
+    monkeypatch.setattr(remote, 'destination', lambda ident: {'id': ident})
+    # The pinned branch wins over the payload's version, exactly as the restore chooses it; an in-place
+    # restore needs no runtime, since its site already has one.
+    assert rs.runtime_branches(rows) == ['7.0', '8.3']
+    assert read == ['snap-a', 'snap-b'] and rs.cached_manifest(first)['managed']['php_branch'] == '7.0'
+    assert rs.runtime_branches(rows) == ['7.0', '8.3'] and len(read) == 2   # read once and kept
+
     built, asked = {'8.3': {}}, []
     import reeve.php_runtime as php_runtime
     monkeypatch.setattr(php_runtime, 'catalog', lambda: built)
-    monkeypatch.setattr(php_runtime, 'build', lambda branches: asked.extend(branches))
-    # Only the branch that is missing, and a branch already in the catalogue is left alone.
-    assert rs.prebuild_runtimes(pending, {}, spawn=lambda work: work()) == ['7.0'] and asked == ['7.0']
-    # A branch already in flight is not started twice, and no more than BUILDING run at once.
-    alive = SimpleNamespace(is_alive=lambda: True)
-    assert rs.prebuild_runtimes(pending, {'runtimes': {'7.0': alive}}, spawn=lambda work: work()) == []
-    assert rs.prebuild_runtimes(pending, {'runtimes': {b: alive for b in ('a', 'b', 'c')}}, spawn=lambda work: work()) == []
-    # A backup the scan described by its tags alone has no manifest: that site builds its runtime the old way.
-    rs.manifest_cache(blog_backup).unlink(); rs.manifest_cache(shop_backup).unlink()
-    assert rs.runtime_branches(rs.recoveries(ledger, active=True)) == []
+    monkeypatch.setattr(php_runtime, 'build', lambda branches_: asked.extend(branches_))
+    lanes = {}
+    assert rs.prebuild_runtimes(rows, lanes, spawn=lambda work: work()) == [first, second]
+    assert asked == ['7.0'] and lanes['runtimes']['branches'] == ['7.0']   # only the branch not already built
+    assert rs.prebuild_runtimes(rows, lanes, spawn=lambda work: work()) is None and asked == ['7.0']  # not twice
     # Preparing a runtime ahead of time never fails a recovery: the restore's own ensure() reports it instead.
-    monkeypatch.setattr(php_runtime, 'build', lambda branches: (_ for _ in ()).throw(RuntimeError('Surý is unreachable')))
-    rs.remember_manifest(blog_backup, {**SITE_MANIFEST, 'operation': blog_backup, 'managed': {'runtime': 'php', 'payload': {'runtime': 'php', 'php_version': '7.0'}}})
-    assert rs.prebuild_runtimes(rs.recoveries(ledger, active=True), {}, spawn=lambda work: work()) == ['7.0']
-    assert [r['state'] for r in rs.recoveries(ledger, active=True)] == ['queued', 'queued']
+    rs.submit(ledger, [{'backup': scan['sites'][1]['backups'][0]['id'], 'mode': 'new', 'name': 'blog', 'domains': 'blog.example'}])
+    monkeypatch.setattr(php_runtime, 'build', lambda branches_: (_ for _ in ()).throw(RuntimeError('Surý is unreachable')))
+    rs.prebuild_runtimes(rows, {}, spawn=lambda work: work())
+    assert [r['state'] for r in rs.recoveries(ledger, active=True)] == ['queued']
+
+
+def test_a_manifest_is_found_wherever_the_backup_is(world, monkeypatch, tmp_path):
+    ledger, live, scan = world
+    ident = scan['sites'][1]['backups'][0]['id']
+    monkeypatch.setattr(rs.sites, 'STAGING', tmp_path / 'staging')
+    # Already on this server: read from the artifact, no repository call.
+    artifact = tmp_path / 'staging' / ident; artifact.mkdir(parents=True)
+    artifact.joinpath('manifest.json').write_text(json.dumps({**SITE_MANIFEST, 'operation': ident, 'managed': {'runtime': 'php', 'php_branch': '8.2'}}))
+    assert rs.ensure_manifest({'backup_id': ident, 'mode': 'new', 'source': 'local', 'snapshot': ''})['managed']['php_branch'] == '8.2'
+    # In a folder of backups.
+    folder = tmp_path / 'old'; folder.mkdir()
+    other = str(uuid.UUID(int=21))
+    folder.joinpath('manifest.json').write_text(json.dumps({**SITE_MANIFEST, 'operation': other, 'managed': {'runtime': 'php', 'php_branch': '8.1'}}))
+    assert rs.ensure_manifest({'backup_id': other, 'mode': 'new', 'source': 'folder:' + str(folder), 'snapshot': ''})['managed']['php_branch'] == '8.1'
+    # Nowhere to be had: None, and the restore does what it always did.
+    assert rs.ensure_manifest({'backup_id': str(uuid.UUID(int=22)), 'mode': 'new', 'source': 'local', 'snapshot': ''}) is None
