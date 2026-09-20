@@ -259,3 +259,30 @@ def test_manage_downloads_fetch_then_export_and_folder_copies_can_go(world, monk
     with ledger.db() as db: db.execute("UPDATE backup_actions SET state='running' WHERE id=?", (aid,))
     rs.recover(ledger)
     assert rs.status(ledger)['actions'][0]['state'] == 'failed' and 'queue it again' in rs.status(ledger)['actions'][0]['error']
+
+
+def test_a_compose_site_finishes_its_recovery_and_does_not_hold_up_the_queue(world, monkeypatch):
+    """Restoring a Compose application redeploys its captured package: files, volumes and dumps come
+    back as part of that, so there is no separate restore job. Waiting for one stalled the recovery in
+    `waiting` for ever, and the queue runs one at a time, so every site behind it never started."""
+    ledger, live, scan = world
+    blog_backup = scan['sites'][1]['backups'][0]['id']; shop_backup = scan['sites'][0]['backups'][0]['id']
+    first, second = rs.submit(ledger, [{'backup': blog_backup, 'mode': 'new', 'name': 'blog', 'domains': 'blog.example'},
+                                       {'backup': shop_backup, 'mode': 'new', 'name': 'later', 'domains': 'later.example'}])
+    monkeypatch.setattr(rs, 'fetch', lambda row: 'already here')
+    created = {}
+    def fake_restore(ledger_, host, backup, name, domain):
+        row = ledger_.submit(ident(), {'name': name, 'domain': domain}); created[name] = row['id']
+        with ledger_.db() as db:   # a package: the deployment writes no site_restores row
+            db.execute("UPDATE jobs SET payload=? WHERE id=?", (json.dumps({'name': name, 'domain': domain, 'runtime': 'compose'}), row['id']))
+        return ledger_.get(row['id'])
+    monkeypatch.setattr(rs.sites, 'restore', fake_restore)
+    host = SimpleNamespace()
+    def step(): rs.perform(ledger, host, rs.recoveries(ledger, active=True)[0]); return {r['id']: r for r in rs.recoveries(ledger)}
+    step(); step()
+    assert step()[first]['state'] == 'waiting'          # the deployment is still running
+    ledger.update(created['blog'], 'succeeded', 'published')
+    assert step()[first]['state'] == 'succeeded'        # and now it finishes, with no restore job in sight
+    # The next site in the queue is reached rather than stranded behind it.
+    assert rs.recoveries(ledger, active=True)[0]['id'] == second
+    step(); assert {r['id']: r for r in rs.recoveries(ledger)}[second]['state'] in ('restoring', 'waiting')

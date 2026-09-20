@@ -441,10 +441,16 @@ def perform(ledger, host, row):
             if mode == 'new':
                 site = ledger.get(row['child'])
                 if site['state'] in ('failed', 'recovery-needed'): raise ValueError('Site creation ' + site['state'] + ': ' + site['error'])
-                restore_job = next((j for j in ledger.site_restores(site['id']) if j['scope'] == 'full'), None)
-                if site['state'] != 'succeeded' or not restore_job: return
-                if restore_job['state'] in ('failed', 'recovery-needed'): raise ValueError('Restore ' + restore_job['state'] + ': ' + restore_job['error'])
-                if restore_job['state'] != 'succeeded': return
+                if site['state'] != 'succeeded': return
+                # A Compose application comes back as a deployment of its captured package: its files,
+                # volumes and database dumps are restored as part of that, so there is no separate restore
+                # job to wait for. Waiting for one left the recovery in `waiting` for ever, and because the
+                # queue runs one recovery at a time, every site behind it never started.
+                if json.loads(site['payload']).get('runtime') != 'compose':
+                    restore_job = next((j for j in ledger.site_restores(site['id']) if j['scope'] == 'full'), None)
+                    if not restore_job: return
+                    if restore_job['state'] in ('failed', 'recovery-needed'): raise ValueError('Restore ' + restore_job['state'] + ': ' + restore_job['error'])
+                    if restore_job['state'] != 'succeeded': return
                 domains = json.loads(row['domains'])
                 if len(domains) > 1:
                     job = ledger.submit_domains(str(uuid.uuid4()), site['id'], domains)
