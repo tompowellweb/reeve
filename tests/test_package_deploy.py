@@ -85,6 +85,7 @@ def mock_runtime(monkeypatch, calls):
         calls.append(args)
         if 'config' in args: return resolve(args)
     monkeypatch.setattr(ci, 'run', execute)
+    monkeypatch.setattr(ca, 'command', lambda args, timeout=120: calls.append(args))
     monkeypatch.setattr(pd, 'image_command', lambda args, *a, **k: calls.append(args))
     monkeypatch.setattr(ca, 'docker', lambda args, **k: [{'Id': 'sha256:' + args[-1], 'Config': {}}] if args[:2] == ['image', 'inspect'] else calls.append(['docker', *args]))
 

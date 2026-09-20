@@ -285,7 +285,7 @@ Import creates a new site; it is not an upload-over-existing-site update workflo
 | Image declares storage absent from Compose | Add a named volume or project-relative mount for every storage path declared by the image. |
 | Image pull or build fails | Check registry access, image architecture, Dockerfile inputs and build logs. The target server is amd64. |
 | Database import fails | Match the dump filename to the service, use the right engine/format and verify credentials and the target database name. |
-| HTTP check fails | Check the selected service and internal port, startup logs, allowed hostname and a non-loopback listening address. `/` must answer without a 4xx or 5xx response. |
+| HTTP check fails | Check the selected service and internal port, startup logs, allowed hostname and a non-loopback listening address. `/` must answer without a 4xx or 5xx response. On a public server the check waits up to two and a half minutes for the name's certificate to be issued; a name that does not point here yet is served with the edge's own certificate and still passes. |
 
 Published ports and container names are replaced by Reeve's private routing and naming.
 Other unsupported settings can be discovered during deployment even after structural review.

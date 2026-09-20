@@ -14,7 +14,7 @@ import yaml
 
 from . import compose_inspect as ci
 from .core import request_id, validate_domains
-from .host import OPS, SITES, PROXY, atomic, trusted, preflight, apply_quota, verify_quota, quota_record, project_id
+from .host import OPS, SITES, PROXY, atomic, trusted, preflight, apply_quota, verify_quota, quota_record, project_id, command
 
 STORE = OPS / 'panel/worker/adoptions'
 
@@ -330,11 +330,22 @@ def http_ready(url, host, timeout=120):
 
 
 def verify_https(domains):
+    """Each name answers over HTTPS through the edge on loopback. On a public server the edge asks Let's
+    Encrypt for a new name when it is published and serves nothing for it until that order completes,
+    typically within a minute or two, so the check keeps trying for up to two and a half minutes. The
+    local VMs never showed this: their internal issuer answers at once."""
     from .host import trust_bundle
     for domain in validate_domains(domains):
-        ci.run(['curl', '--noproxy', '*', '--fail', '--silent', '--show-error', '--max-time', '10',
-            '--cacert', trust_bundle(), '--resolve', domain + ':443:127.0.0.1',
-            'https://' + domain + '/'], raw=True)
+        try:
+            command(['curl', '--noproxy', '*', '--fail', '--silent', '--show-error', '--max-time', '15',
+                '--retry', '30', '--retry-all-errors', '--retry-delay', '5', '--retry-max-time', '150',
+                '--cacert', trust_bundle(), '--resolve', domain + ':443:127.0.0.1',
+                'https://' + domain + '/'], timeout=200)
+        except RuntimeError as exc:
+            detail = str(exc).split(': ', 1)[-1].strip()
+            raise ValueError(f'The edge did not serve https://{domain}/ within two and a half minutes of publication'
+                             f' ({detail}). Check that the site\'s HTTP service answers / and that the name has a'
+                             f' certificate on its site page; Retry deployment repeats this check.') from None
 
 
 def health(row):

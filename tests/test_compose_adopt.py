@@ -133,3 +133,20 @@ def test_unlimited_process_sentinels_require_actual_unlimited_kernel_limit(tmp_p
         ca.verify_process_limit(container, -1, proc, cgroups)
     container['HostConfig']['PidsLimit'] = 512
     ca.verify_process_limit(container, 512, proc, cgroups)
+
+
+def test_https_verification_waits_for_the_edge_and_names_the_domain(monkeypatch):
+    calls = []
+    monkeypatch.setattr(hm, 'trust_bundle', lambda: '/tmp/bundle.crt')
+    monkeypatch.setattr(ca, 'command', lambda args, timeout=120: calls.append((args, timeout)))
+    ca.verify_https(['shop.example.com', 'www.shop.example.com'])
+    assert [a[-1] for a, _ in calls] == ['https://shop.example.com/', 'https://www.shop.example.com/']
+    args, timeout = calls[0]
+    # Let's Encrypt has not issued a fresh name's certificate when the edge is published: keep trying.
+    assert '--retry-all-errors' in args and args[args.index('--retry-max-time') + 1] == '150' and timeout > 150
+    assert args[args.index('--resolve') + 1] == 'shop.example.com:443:127.0.0.1'
+
+    def refuse(args, timeout=120): raise RuntimeError("curl failed (35): curl: (35) OpenSSL SSL_connect: SSL_ERROR_SYSCALL")
+    monkeypatch.setattr(ca, 'command', refuse)
+    with pytest.raises(ValueError, match=r'did not serve https://shop.example.com/ .*SSL_ERROR_SYSCALL.*Retry deployment'):
+        ca.verify_https(['shop.example.com'])
